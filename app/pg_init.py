@@ -80,6 +80,43 @@ def resolve_manual_program_path(manual_path, executable_name):
     return candidate.resolve()
 
 
+def parse_manual_program_command(command):
+    """Parse a shortcut Target using Windows rules, never a command shell."""
+    if not isinstance(command, str) or not command.strip():
+        raise ValueError("실행 디바이스의 수동 경로를 입력하세요.")
+    command = command.strip()
+    if any(character in command for character in ("\0", "\r", "\n")):
+        raise ValueError("실행 주소와 속성은 한 줄로 입력하세요.")
+    quoted, slashes = False, 0
+    for character in command:
+        if character == '"' and slashes % 2 == 0:
+            quoted = not quoted
+        slashes = slashes + 1 if character == "\\" else 0
+    if quoted:
+        raise ValueError("실행 주소와 속성의 큰따옴표가 닫혔는지 확인하세요.")
+    from ctypes import wintypes
+    shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    shell32.CommandLineToArgvW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
+    shell32.CommandLineToArgvW.restype = ctypes.POINTER(wintypes.LPWSTR)
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
+    count = ctypes.c_int()
+    argv = shell32.CommandLineToArgvW(command, ctypes.byref(count))
+    if not argv:
+        raise ValueError("실행 주소와 속성을 해석할 수 없습니다.")
+    try:
+        values = [argv[index] for index in range(count.value)]
+    finally:
+        kernel32.LocalFree(ctypes.cast(argv, ctypes.c_void_p))
+    if not values:
+        raise ValueError("실행 파일 경로가 없습니다.")
+    executable = Path(values[0]).expanduser()
+    if executable.suffix.casefold() != ".exe" or not executable.is_file():
+        raise ValueError("실행할 EXE 파일을 확인할 수 없습니다. 경로와 큰따옴표를 확인하세요.")
+    return executable.resolve(), values[1:]
+
+
 def find_auto_program_executable(program_config, drive_roots=None):
     config = normalize_program_config(program_config)
     roots = windows_drive_roots() if drive_roots is None else list(drive_roots)

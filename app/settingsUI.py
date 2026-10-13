@@ -2,7 +2,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QEasingCurve, QPropertyAnimation, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
@@ -29,7 +29,13 @@ from app.pg_init import (
     find_auto_program_executable,
     find_program_executable,
     normalize_program_config,
+    parse_manual_program_command,
     resolve_manual_program_path,
+)
+
+WIN32_MANUAL_PATH_DESCRIPTION = "비워 두면 자동 검색 결과를 사용합니다. 폴더 또는 실행 파일을 지정할 수 있습니다."
+ADB_MANUAL_PATH_DESCRIPTION = (
+    '실행 디바이스의 바로가기 생성 후, 우클릭-속성-바로 가기 탭 의 "대상"을 복사하여 사용합니다.'
 )
 
 
@@ -327,9 +333,11 @@ class SettingsPanel(QWidget):
         self.program_path_row = self._add_setting_row(
             program_layout,
             "수동 경로",
-            "비워 두면 자동 검색 결과를 사용합니다. 폴더 또는 실행 파일을 지정할 수 있습니다.",
+            WIN32_MANUAL_PATH_DESCRIPTION,
             program_path_controls,
         )
+        self.program_path_row.description_label.installEventFilter(self)
+        self.program_path_row.description_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.program_active_status = QLabel()
         self.program_active_status.setObjectName("programPathStatus")
         self.program_active_status.setWordWrap(True)
@@ -492,6 +500,9 @@ class SettingsPanel(QWidget):
         )
         self.clear_log_checkbox.setChecked(general["clear_log_on_start"])
 
+        controller_index = self._find_controller_index(self.config["controller"])
+        if controller_index >= 0:
+            self.controller_combo.setCurrentIndex(controller_index)
         self._confirmed_manual_path = self.config["program"]["manual_path"]
         self.program_path_input.setText(self._confirmed_manual_path)
         self._refresh_program_status()
@@ -500,9 +511,6 @@ class SettingsPanel(QWidget):
         theme_index = self.theme_combo.findData(theme)
         self.theme_combo.setCurrentIndex(theme_index if theme_index >= 0 else 1)
 
-        controller_index = self._find_controller_index(self.config["controller"])
-        if controller_index >= 0:
-            self.controller_combo.setCurrentIndex(controller_index)
         self._update_controller_details()
 
     def _find_controller_index(self, saved_controller):
@@ -653,6 +661,11 @@ class SettingsPanel(QWidget):
         self._save()
 
     def _browse_program_path(self):
+        if self.controller_settings().get("type") == "Adb":
+            selected, _ = QFileDialog.getOpenFileName(self, "앱플레이어 실행 파일 선택", "", "실행 파일 (*.exe)")
+            if selected:
+                self.program_path_input.setText(f'"{selected}"')
+            return
         initial_path = self.program_path_input.text().strip()
         selected = QFileDialog.getExistingDirectory(
             self,
@@ -674,14 +687,20 @@ class SettingsPanel(QWidget):
 
         manual_path = self.program_path_input.text().strip()
         config = normalize_program_config(self.config.get("program"))
-        if manual_path and resolve_manual_program_path(
-            manual_path, config["executable_name"]
-        ) is None:
+        error = None
+        if self.controller_settings().get("type") == "Adb":
+            try:
+                parse_manual_program_command(manual_path)
+            except (OSError, ValueError) as exception:
+                error = str(exception)
+        elif manual_path and resolve_manual_program_path(manual_path, config["executable_name"]) is None:
+            error = f"{config['executable_name']} 파일을 확인할 수 없습니다."
+        if error:
             self._manual_path_error_active = True
             self.program_apply_button.setText("초기화")
             self._set_status_label(
                 self.program_active_status,
-                f"{config['executable_name']} 파일을 확인할 수 없습니다.",
+                error,
                 False,
             )
             self._set_program_active_status_visible(True, animate=True)
@@ -764,8 +783,15 @@ class SettingsPanel(QWidget):
         self.program_apply_button.setText(
             "초기화" if show_active_status else "확인"
         )
-        auto_path = find_auto_program_executable(config)
-        if auto_path is None:
+        adb = self.controller_settings().get("type") == "Adb"
+        self.program_path_row.description_label.setText(ADB_MANUAL_PATH_DESCRIPTION if adb else WIN32_MANUAL_PATH_DESCRIPTION)
+        self._update_program_description_height()
+        self.program_path_input.setPlaceholderText('"앱플레이어 실행 파일.exe" 실행 속성' if adb else "실행 파일 또는 실행 파일이 있는 폴더 경로")
+        self.program_auto_status.setEnabled(not adb)
+        auto_path = None if adb else find_auto_program_executable(config)
+        if adb:
+            self._set_status_label(self.program_auto_status, "자동 경로를 사용할 수 없습니다.", None)
+        elif auto_path is None:
             self._set_status_label(
                 self.program_auto_status,
                 "자동 검색: 설치 위치를 찾지 못했습니다.",
@@ -781,13 +807,13 @@ class SettingsPanel(QWidget):
         if self._manual_path_error_active:
             self._set_program_active_status_visible(True, animate)
             return
-        if not has_manual_path:
+        if not has_manual_path and not adb:
             # 접히는 동안 마지막 수동 경로 상태를 유지해 색상과 문구가 튀지 않게 한다.
             self._set_program_active_status_visible(False, animate)
             return
 
-        active_path = find_program_executable(config)
-        if active_path is None:
+        active_path = self.program_settings().get("resolved_path") if adb else find_program_executable(config)
+        if not active_path:
             self._set_status_label(
                 self.program_active_status,
                 "사용할 실행 파일이 없습니다. 작업 목록의 자동 실행 작업이 비활성화됩니다.",
@@ -801,10 +827,23 @@ class SettingsPanel(QWidget):
             )
         self._set_program_active_status_visible(True, animate)
 
+    def _update_program_description_height(self):
+        label = self.program_path_row.description_label
+        label.setMinimumHeight(max(0, label.heightForWidth(max(1, label.width()))))
+
+    def eventFilter(self, watched, event):
+        if (hasattr(self, "program_path_row") and watched is self.program_path_row.description_label
+                and event.type() in (QEvent.Type.Resize, QEvent.Type.FontChange)):
+            self._update_program_description_height()
+        return super().eventFilter(watched, event)
+
     def _on_controller_changed(self, _index):
         self._update_controller_details()
+        self._manual_path_error_active = False
+        self._refresh_program_status()
         self._save()
         self.controller_changed.emit(self.controller_settings())
+        self.program_changed.emit(self.program_settings())
 
     def _on_theme_changed(self, _index):
         self._save()
@@ -856,6 +895,17 @@ class SettingsPanel(QWidget):
             **normalize_program_config(self.config.get("program")),
             "manual_path": self._confirmed_manual_path,
         }
-        resolved_path = find_program_executable(config)
+        adb = self.controller_settings().get("type") == "Adb"
+        config["manual_only"] = adb
+        config["connection"] = normalize_connection_preferences(self.config.get("connection"))
+        if adb:
+            try:
+                resolved_path, arguments = parse_manual_program_command(self._confirmed_manual_path)
+                config["launch_arguments"] = arguments
+            except (OSError, ValueError):
+                resolved_path = None
+                config["launch_arguments"] = []
+        else:
+            resolved_path = find_program_executable(config)
         config["resolved_path"] = str(resolved_path) if resolved_path else ""
         return config
