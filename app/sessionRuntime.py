@@ -62,6 +62,7 @@ class SessionRuntime(AppRuntime):
         self.user_dir = Path(user_dir)
 
     def _load_interface(self):
+        self.interface_missing = self.snapshot.get("interface_missing") is True
         return deepcopy(self.snapshot["interface"])
 
     def _get_resource_config(self):

@@ -161,6 +161,7 @@ class AppRuntime:
         self.resource_dir = self.base_dir / "resources"
         self.user_dir = self.base_dir / "user"
         self.interface_path = self.resource_dir / "interface.json"
+        self.interface_missing = False
 
         self.interface = self._load_interface()
         self.resource_config = self._get_resource_config()
@@ -190,8 +191,18 @@ class AppRuntime:
         self._startup_window_guard = None
 
     def _load_interface(self):
-        with self.interface_path.open("r", encoding="utf-8") as file:
-            return json.load(file)
+        try:
+            with self.interface_path.open("r", encoding="utf-8") as file:
+                interface = json.load(file)
+        except FileNotFoundError:
+            self.interface_missing = True
+            return {"controller": [{"name": "Win32Default", "label": "Win32 (기본 설정)", "type": "Win32",
+                                     "win32": {"window_regex": "(?!)", "screencap": "Background",
+                                               "mouse": "PostMessage", "keyboard": "PostMessage"}}],
+                    "resource": [], "task": [], "option": {}}
+        if not isinstance(interface, dict):
+            raise ValueError("interface.json의 최상위 값은 객체여야 합니다.")
+        return interface
 
     def _get_controller_config(self, controller_settings: dict | None = None):
         controller, _ = self._select_controller_config(controller_settings)
@@ -216,29 +227,41 @@ class AppRuntime:
         if supported_controllers is not None and not isinstance(supported_controllers, list):
             raise ValueError("리소스의 controller 설정은 목록이어야 합니다.")
 
+        declared_controllers = []
         win32_controllers = []
         for controller in controllers:
-            if not isinstance(controller, dict) or controller.get("type") != "Win32":
+            if not isinstance(controller, dict) or controller.get("type") not in ("Win32", "Adb"):
                 continue
 
             controller_name = controller.get("name")
             win32_config = controller.get("win32")
             if not isinstance(controller_name, str) or not controller_name.strip():
                 continue
-            if not isinstance(win32_config, dict):
+            if controller["type"] == "Win32" and not isinstance(win32_config, dict):
                 continue
             if (
                 supported_controllers is not None
                 and controller_name not in supported_controllers
             ):
                 continue
-            win32_controllers.append(controller)
+            declared_controllers.append(controller)
+            if controller["type"] == "Win32":
+                win32_controllers.append(controller)
 
-        if not win32_controllers:
-            raise ValueError("현재 리소스에서 사용할 수 있는 Win32 컨트롤러가 없습니다.")
+        if not declared_controllers:
+            raise ValueError("현재 리소스에서 사용할 수 있는 컨트롤러가 없습니다.")
 
         if not isinstance(controller_settings, dict):
-            return win32_controllers[0], "default"
+            return declared_controllers[0], "default"
+
+        requested_name = controller_settings.get("name")
+        for controller in declared_controllers:
+            if requested_name == controller["name"]:
+                return controller, "exact"
+        if controller_settings.get("type") == "Adb":
+            raise ValueError("현재 리소스에서 선택한 ADB 컨트롤러를 사용할 수 없습니다.")
+        if not win32_controllers:
+            return declared_controllers[0], "default"
 
         nested_settings = controller_settings.get("win32")
         if isinstance(nested_settings, dict):
@@ -280,6 +303,8 @@ class AppRuntime:
         return win32_controllers[0], "fallback"
 
     def _get_resource_config(self):
+        if self.interface_missing:
+            return {"name": "UnavailableResource", "path": []}
         resources = self.interface.get("resource", [])
         if not resources:
             raise ValueError("interface.json에 리소스 항목이 없습니다.")
@@ -294,6 +319,8 @@ class AppRuntime:
         return resource
 
     def _load_resource(self):
+        if self.interface_missing:
+            return False, "interface.json이 없어 작업 리소스를 불러올 수 없습니다. 파일을 준비한 후 다시 실행하세요."
         if self._resource_loaded and self.resource is not None and self.resource.loaded:
             return True, "리소스가 이미 로드되어 있습니다."
 

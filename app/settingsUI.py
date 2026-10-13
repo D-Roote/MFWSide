@@ -147,7 +147,7 @@ class SettingsStore:
             return {}
         return {
             key: deepcopy(controller[key])
-            for key in ("name", "type", "win32")
+            for key in ("name", "type", "win32", "adb")
             if key in controller
         }
 
@@ -215,12 +215,12 @@ class SettingsPanel(QWidget):
         )
         result = []
         for controller in controllers:
-            if not isinstance(controller, dict) or controller.get("type") != "Win32":
+            if not isinstance(controller, dict) or controller.get("type") not in ("Win32", "Adb"):
                 continue
             name = controller.get("name")
             if not isinstance(name, str) or not name:
                 continue
-            if not isinstance(controller.get("win32"), dict):
+            if controller["type"] == "Win32" and not isinstance(controller.get("win32"), dict):
                 continue
             if supported is not None and name not in supported:
                 continue
@@ -524,6 +524,8 @@ class SettingsPanel(QWidget):
             if isinstance(saved_win32.get(method), str) and saved_win32[method]
         }
         for index, controller in enumerate(self.controllers):
+            if controller.get("type") != "Win32":
+                continue
             win32_config = controller["win32"]
             if requested and all(
                 win32_config.get(method, WIN32_METHOD_DEFAULTS[method]) == value
@@ -811,7 +813,10 @@ class SettingsPanel(QWidget):
     def _update_controller_details(self):
         controller = self.controller_combo.currentData()
         if not isinstance(controller, dict):
-            self.controller_details.setText("선택할 수 있는 Win32 컨트롤러가 없습니다.")
+            self.controller_details.setText("선택할 수 있는 컨트롤러가 없습니다.")
+            return
+        if controller.get("type") == "Adb":
+            self.controller_details.setText(f"ID: {controller['name']}  ·  ADB 기기 화면 캡처 및 입력")
             return
         win32_config = controller.get("win32", {})
         values = {

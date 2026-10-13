@@ -1668,6 +1668,8 @@ class MainWindow(QMainWindow):
         self.check_start_button_state()
         self._restore_ui_state()
         self._ui_state_ready = True
+        if getattr(self.runtime, "interface_missing", False) is True:
+            self.append_log("interface.json이 없습니다. 기본 Win32 설정 UI를 표시하며 작업 실행은 비활성화됩니다.")
 
     def _setup_after_action_footer(self):
         footer = self.ui.settingStartWidget_2
@@ -1872,6 +1874,7 @@ class MainWindow(QMainWindow):
         queue = self.build_execution_queue() if include_tasks else []
         return deepcopy({
             "interface": self.runtime.interface, "interface_path": str(self.runtime.interface_path),
+            "interface_missing": getattr(self.runtime, "interface_missing", False) is True,
             "resource": self.runtime.resource_config, "user_dir": str(self.runtime.user_dir),
             "queue": queue, "controller": self.settings_panel.controller_settings(),
             "program": self.settings_panel.program_settings(), "settings": self.settings_panel.config,
@@ -2296,6 +2299,9 @@ class MainWindow(QMainWindow):
         return True
 
     def on_task_start(self):
+        if getattr(self.runtime, "interface_missing", False) is True:
+            self.append_log("interface.json을 준비한 후 앱을 다시 실행하세요.")
+            return
         if not self.multi_panel.ready_to_close:
             self.append_log("다중 실행 또는 대상 탐색이 끝난 뒤 기본 작업을 시작하세요.")
             return
@@ -3063,6 +3069,9 @@ class MainWindow(QMainWindow):
         self.on_user_config_changed()
 
     def check_start_button_state(self):
+        if getattr(self.runtime, "interface_missing", False) is True:
+            self.ui.workStartBtn.setEnabled(False)
+            return
         if hasattr(self, "multi_panel") and not self.multi_panel.ready_to_close and not self.isRunning:
             self.ui.workStartBtn.setEnabled(False)
             return
