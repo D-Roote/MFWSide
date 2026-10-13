@@ -1,11 +1,14 @@
 """Shared Start options, fixed toolbar, discovery races and guarded app lifecycle."""
 import json
+import os
+from pathlib import Path
 import unittest
 from unittest.mock import MagicMock, patch
 
 import test_runtime_lifecycle as fixtures
 from test_multi_execution import FakeContext, connection
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QFrame, QLabel
+from PySide6.QtTest import QTest
 
 
 class MultiExecutionUITests(unittest.TestCase):
@@ -53,6 +56,108 @@ class MultiExecutionUITests(unittest.TestCase):
             self.assertLessEqual(self.panel.cards_contents.width(), self.panel.cards_scroll.viewport().width())
         self.assertEqual(len(self.panel.cards), len(ids))
 
+    def test_toolbar_omits_notice_row_and_diagnostics_use_existing_log(self):
+        toolbar = self.panel.findChild(QFrame, "multiToolbar")
+        self.assertEqual(toolbar.layout().count(), 3)
+        self.assertFalse(any("연결 확인 후" in label.text() for label in toolbar.findChildren(QLabel)))
+        height = toolbar.height()
+        self.panel.report_status("연결 대상 확인 오류")
+        QApplication.processEvents()
+        self.assertEqual(toolbar.height(), height)
+        self.assertIn("[다중 실행] 연결 대상 확인 오류", self.window.ui.logPrintText.toPlainText())
+
+    def test_compact_cards_keep_two_rows_and_aligned_controls_in_both_themes(self):
+        ids = [self.add(i + 1) for i in range(5)]
+        for theme in ("light", "dark"):
+            combo = self.window.settings_panel.theme_combo
+            combo.setCurrentIndex(combo.findData(theme))
+            self.window.resize(1100, 750)
+            self.panel.cards_scroll.verticalScrollBar().setValue(0)
+            QApplication.processEvents()
+            for sid in ids:
+                card = self.panel.cards[sid]
+                self.assertLessEqual(card.height(), 100)
+                self.assertFalse(card.adb_details.isVisible())
+                self.assertFalse(card.adb_details_toggle.isVisible())
+                self.assertEqual(card.status.x(), card.target_combo.x())
+                self.assertLess(abs(card.start_button.mapTo(card, card.start_button.rect().center()).y()
+                                    - card.status.mapTo(card, card.status.rect().center()).y()), 3)
+                self.assertLess(abs(card.preset_combo.mapTo(card, card.preset_combo.rect().center()).y()
+                                    - card.target_combo.mapTo(card, card.target_combo.rect().center()).y()), 3)
+            preview_dir = os.environ.get("MAABA_UI_PREVIEW_DIR")
+            if preview_dir:
+                path = Path(preview_dir)
+                path.mkdir(parents=True, exist_ok=True)
+                self.assertTrue(self.panel.grab().save(str(path / f"compact_instances_{theme}.png")))
+
+    def test_long_names_targets_and_failures_never_enlarge_card(self):
+        sid = self.add()
+        card, session = self.panel.cards[sid], self.panel.manager.sessions[sid]
+        QApplication.processEvents()
+        normal_height = card.height()
+        card.title.setText("매우 긴 인스턴스 이름 " * 30)
+        card.target_combo.setItemText(1, "매우 긴 창 제목과 실행 경로 " * 30)
+        session.state = "failed"
+        session.result = {"succeeded": False, "message": "연결 오류에 관한 자세한 설명\n" * 40}
+        card.refresh()
+        QApplication.processEvents()
+        self.assertEqual(card.height(), normal_height)
+        self.assertEqual(card.status.text(), "실패")
+        self.assertIn(session.result["message"], card.status.toolTip())
+        self.assertEqual(self.panel.cards_scroll.horizontalScrollBar().maximum(), 0)
+        self.assertLessEqual(self.panel.cards_contents.width(), self.panel.cards_scroll.viewport().width())
+
+    def test_adb_details_start_collapsed_and_expansion_preserves_connection(self):
+        preset = {"name": "Adb", "type": "Adb", "label": "ADB"}
+        self.panel.presets.append(preset)
+        self.window.runtime.interface["controller"].append(preset)
+        self.window.runtime.resource_config["controller"].append("Adb")
+        data = connection("Adb", "127.0.0.1:5555")
+        data["preferences"] = {"adb_path": "C:/SDK/adb.exe", "address": "127.0.0.1:5555"}
+        sid = self.panel.manager.add(data)
+        card = self.panel.cards[sid]
+        QApplication.processEvents()
+        collapsed_height = card.height()
+        self.assertLessEqual(collapsed_height, 100)
+        self.assertTrue(card.adb_details_toggle.isVisible())
+        self.assertFalse(card.adb_details.isVisible())
+        card.adb_details_toggle.click()
+        QTest.qWait(20)
+        self.assertTrue(card.adb_details.isVisible())
+        self.assertGreater(card.height(), collapsed_height)
+        self.assertEqual(card.address.text(), "127.0.0.1:5555")
+        self.assertEqual(self.panel.manager.sessions[sid].connection, data)
+        card.adb_details_toggle.click()
+        QTest.qWait(20)
+        self.assertFalse(card.adb_details.isVisible())
+        self.assertEqual(card.height(), collapsed_height)
+        self.assertEqual(self.panel.manager.sessions[sid].connection, data)
+
+    def test_small_workspace_still_fits_long_connection_text(self):
+        sid = self.add()
+        self.window.resize(1000, 650)
+        self.panel.cards[sid].target_combo.setItemText(1, "연결 대상 경로 " * 100)
+        QApplication.processEvents()
+        self.assertEqual(self.panel.cards_scroll.horizontalScrollBar().maximum(), 0)
+        self.assertLessEqual(self.panel.cards_contents.width(), self.panel.cards_scroll.viewport().width())
+
+    def test_connection_status_stays_aligned_with_target_for_adb_and_window_sizes(self):
+        sid = self.add()
+        preset = {"name": "Adb", "type": "Adb", "label": "ADB"}
+        self.panel.presets.append(preset)
+        adb_id = self.panel.manager.add(connection("Adb", "127.0.0.1:5555"))
+        for width in (1000, 1100, 1400):
+            self.window.resize(width, 750)
+            for expanded in (False, True):
+                self.panel.cards[adb_id].adb_details_toggle.setChecked(expanded)
+                QTest.qWait(20)
+                for instance_id in (sid, adb_id):
+                    card = self.panel.cards[instance_id]
+                    self.assertEqual(card.status.x(), card.target_combo.x())
+                    self.assertEqual(card.title.x(), card.preset_combo.x())
+                    self.assertEqual(card.status.width(), card.target_combo.width())
+        self.assertEqual(self.panel.cards_scroll.horizontalScrollBar().maximum(), 0)
+
     def test_one_bulk_snapshot_copies_task_options_and_personal_settings(self):
         ids = [self.add(42), self.add(43)]
         task = self.fixture.find_task_widget(self.window)
@@ -82,7 +187,7 @@ class MultiExecutionUITests(unittest.TestCase):
             with patch.object(self.panel.manager, "start") as start:
                 self.panel.start_sessions([sid])
         start.assert_not_called()
-        self.assertIn("invalid input", self.panel.notice.text())
+        self.assertIn("invalid input", self.window.ui.logPrintText.toPlainText())
 
     def test_connection_check_does_not_depend_on_valid_task_inputs(self):
         sid = self.add()

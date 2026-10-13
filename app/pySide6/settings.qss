@@ -51,6 +51,24 @@ QFrame#extraFeatureCard {
     border-radius: 8px;
 }
 
+QFrame#multiInstanceCard QPushButton#monitorActionButton {
+    padding: 4px 9px;
+    min-height: 18px;
+}
+
+QFrame#multiInstanceCard QComboBox#monitorComboBox,
+QFrame#multiInstanceCard QLineEdit#monitorLineEdit {
+    padding-top: 4px;
+    padding-bottom: 4px;
+    min-height: 18px;
+}
+
+QFrame#multiInstanceCard QPushButton#monitorActionButton:checked {
+    background-color: #E0EAF3;
+    border-color: #00AEEF;
+    color: #006E94;
+}
+
 QToolButton#extraNavigationToggle {
     background-color: #E2E8F0;
     color: #64748B;

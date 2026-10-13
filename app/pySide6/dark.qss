@@ -422,6 +422,12 @@ QFrame#extraFeatureCard {
     border-color: #30415E;
 }
 
+QFrame#multiInstanceCard QPushButton#monitorActionButton:checked {
+    background-color: #283A55;
+    border-color: #63D2F5;
+    color: #63D2F5;
+}
+
 QToolButton#extraNavigationToggle {
     background-color: #30415E;
     color: #AEBFD2;

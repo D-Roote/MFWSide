@@ -2,15 +2,34 @@
 from copy import deepcopy
 
 from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea,
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea,
     QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from app.controls import PopupOnlyWheelComboBox
 from app.monitoring import normalize_connection_preferences, supported_presets, window_process_info
 from app.multiExecution import SessionManager, STATE_LABELS, discover_connections
-from app.sessionRuntime import resolve_preset, target_identity
+from app.sessionRuntime import target_identity
+
+
+class _SingleLineLabel(QLabel):
+    """Keep full accessible text, but never let long text enlarge a card."""
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.setMinimumWidth(0)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setPen(self.palette().color(self.foregroundRole()))
+        rect = self.contentsRect()
+        text = self.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideRight, rect.width())
+        painter.drawText(rect, self.alignment(), text)
+        painter.end()
 
 
 class DiscoveryWorker(QThread):
@@ -44,29 +63,40 @@ class InstanceCard(QFrame):
         self.setObjectName("multiInstanceCard")
         self._syncing = True
         self.targets = []
-        root = QHBoxLayout(self)
-        root.setContentsMargins(16, 14, 16, 14)
-        root.setSpacing(18)
-        left = QVBoxLayout()
-        self.title = QLabel(session.title)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 10, 12, 10)
+        root.setSpacing(6)
+        rows = QGridLayout()
+        rows.setHorizontalSpacing(6)
+        rows.setVerticalSpacing(6)
+        rows.setColumnStretch(0, 2)
+        rows.setColumnStretch(1, 3)
+        header = QHBoxLayout()
+        header.setSpacing(8)
+        self.title = _SingleLineLabel(session.title)
         self.title.setObjectName("settingsRowTitle")
-        self.status = QLabel()
-        self.status.setWordWrap(True)
+        self.title.setToolTip(session.title)
+        self.status = _SingleLineLabel()
         self.status.setObjectName("settingsSectionDescription")
-        left.addWidget(self.title)
-        left.addWidget(self.status)
-        controls = QHBoxLayout()
+        rows.addWidget(self.title, 0, 0)
+        rows.addWidget(self.status, 0, 1)
+        self.adb_details_toggle = QPushButton("ADB 설정")
+        self.adb_details_toggle.setObjectName("monitorActionButton")
+        self.adb_details_toggle.setCheckable(True)
+        self.adb_details_toggle.setAccessibleName("ADB 상세 연결 설정 펼치기")
+        self.adb_details_toggle.setToolTip("ADB 경로·주소·편의 최소화 창 설정")
+        header.addWidget(self.adb_details_toggle)
         self.start_button = QPushButton("실행")
         self.stop_button = QPushButton("중지")
         self.delete_button = QPushButton("삭제")
         for button in (self.start_button, self.stop_button, self.delete_button):
             button.setObjectName("monitorActionButton")
-            controls.addWidget(button)
-        left.addLayout(controls)
-        left.addStretch()
-        root.addLayout(left, 2)
-        right = QVBoxLayout()
-        right.setSpacing(6)
+            header.addWidget(button)
+        rows.addLayout(header, 0, 2)
+        connection_row = QHBoxLayout()
+        connection_row.setSpacing(6)
+        connection_row.addStretch()
         self.preset_combo = PopupOnlyWheelComboBox()
         self.preset_combo.setAccessibleName("인스턴스 컨트롤러")
         self.preset_combo.setObjectName("monitorComboBox")
@@ -90,15 +120,32 @@ class InstanceCard(QFrame):
         self.emulator_combo.addItem("편의 최소화 창 없음", {})
         for widget in (self.preset_combo, self.target_combo, self.adb_path, self.address, self.emulator_combo):
             widget.setMinimumWidth(0)
-            right.addWidget(widget)
-        actions = QHBoxLayout()
-        self.discover_button = QPushButton("대상 탐색")
-        self.check_button = QPushButton("연결 확인")
+            widget.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        rows.addWidget(self.preset_combo, 1, 0)
+        rows.addWidget(self.target_combo, 1, 1)
+        self.discover_button = QPushButton("탐색")
+        self.discover_button.setAccessibleName("인스턴스 대상 탐색")
+        self.discover_button.setToolTip("실행 중인 연결 대상 탐색")
+        self.check_button = QPushButton("확인")
+        self.check_button.setAccessibleName("인스턴스 연결 확인")
+        self.check_button.setToolTip("선택한 대상의 연결 확인")
         for button in (self.discover_button, self.check_button):
             button.setObjectName("monitorActionButton")
-            actions.addWidget(button)
-        right.addLayout(actions)
-        root.addLayout(right, 3)
+            connection_row.addWidget(button)
+        rows.addLayout(connection_row, 1, 2)
+        root.addLayout(rows)
+        self.adb_details = QWidget(self)
+        details = QVBoxLayout(self.adb_details)
+        details.setContentsMargins(0, 4, 0, 0)
+        details.setSpacing(6)
+        address_row = QHBoxLayout()
+        address_row.setSpacing(6)
+        address_row.addWidget(self.adb_path, 3)
+        address_row.addWidget(self.address, 2)
+        details.addLayout(address_row)
+        details.addWidget(self.emulator_combo)
+        root.addWidget(self.adb_details)
+        self.adb_details_toggle.toggled.connect(self._toggle_adb_details)
         self.start_button.clicked.connect(lambda: panel.start_sessions([session.id]))
         self.stop_button.clicked.connect(lambda: panel.manager.stop(session.id))
         self.delete_button.clicked.connect(lambda: panel.manager.remove(session.id))
@@ -135,8 +182,14 @@ class InstanceCard(QFrame):
 
     def _show_adb_fields(self):
         adb = any(p["name"] == self.preset_combo.currentData() and p["type"] == "Adb" for p in self.panel.presets)
-        for widget in (self.adb_path, self.address, self.emulator_combo):
-            widget.setVisible(adb)
+        self.adb_details_toggle.setVisible(adb)
+        if not adb:
+            self.adb_details_toggle.setChecked(False)
+        self.adb_details.setVisible(adb and self.adb_details_toggle.isChecked())
+
+    def _toggle_adb_details(self, checked):
+        self.adb_details_toggle.setAccessibleName("ADB 상세 연결 설정 접기" if checked else "ADB 상세 연결 설정 펼치기")
+        self._show_adb_fields()
 
     def _preset_changed(self):
         if self._syncing:
@@ -170,14 +223,19 @@ class InstanceCard(QFrame):
                 "emulator": self.emulator_combo.currentData() or {},
             })
         except ValueError as error:
-            self.panel.notice.setText(str(error))
+            self.panel.report_status(str(error))
             self.set_connection(self.panel.manager.sessions[self.session_id].connection)
 
     def refresh(self):
         session = self.panel.manager.sessions[self.session_id]
-        self.status.setText(STATE_LABELS.get(session.state, session.state) +
-                            ("\n" + session.result["message"] if session.result and session.state == "failed" else ""))
-        self.status.setToolTip("\n".join(list(session.logs)[-12:]))
+        state = STATE_LABELS.get(session.state, session.state)
+        self.status.setText(state)
+        details = [state]
+        if session.result and session.state == "failed":
+            details.append(session.result["message"])
+        details.extend(list(session.logs)[-12:])
+        self.status.setToolTip("\n".join(details))
+        self.target_combo.setToolTip(self.target_combo.currentText())
         editable = (not session.active and not self.panel.window.isRunning and not self.panel.closing
                     and self.panel.discovery_worker is None and not self.panel.window._completion_pending)
         for control in (self.preset_combo, self.target_combo, self.adb_path, self.address, self.emulator_combo,
@@ -226,10 +284,6 @@ class MultiExecutionPanel(QWidget):
             button.setObjectName("monitorActionButton")
             buttons.addWidget(button)
         tools.addLayout(buttons)
-        self.notice = QLabel("연결 확인 후 실행 시 재연결합니다. Win32 커서 사용 입력은 순차 실행하고 ADB는 병렬 실행합니다.")
-        self.notice.setObjectName("settingsSectionDescription")
-        self.notice.setWordWrap(True)
-        tools.addWidget(self.notice)
         root.addWidget(toolbar)
         self.cards_scroll = QScrollArea(self)
         self.cards_scroll.setObjectName("extraFeatureScroll")
@@ -239,7 +293,7 @@ class MultiExecutionPanel(QWidget):
         self.cards_contents = QWidget()
         self.cards_layout = QVBoxLayout(self.cards_contents)
         self.cards_layout.setContentsMargins(0, 0, 6, 0)
-        self.cards_layout.setSpacing(12)
+        self.cards_layout.setSpacing(8)
         self.cards_layout.addStretch()
         self.cards_scroll.setWidget(self.cards_contents)
         root.addWidget(self.cards_scroll, 1)
@@ -258,6 +312,9 @@ class MultiExecutionPanel(QWidget):
 
     def default_preferences(self):
         return normalize_connection_preferences(self.window.settings_panel.config.get("connection"))
+
+    def report_status(self, message):
+        self.window.append_log(f"[다중 실행] {message}")
 
     def _changed(self, session_id):
         if session_id not in self.manager.sessions:
@@ -286,12 +343,12 @@ class MultiExecutionPanel(QWidget):
 
     def start_sessions(self, ids, mode="run", snapshot=None):
         if self.window.isRunning or self.closing or self.window._completion_pending or self.discovery_worker is not None:
-            self.notice.setText("기본 작업이나 대상 탐색이 끝난 뒤 다시 시도하세요.")
+            self.report_status("기본 작업이나 대상 탐색이 끝난 뒤 다시 시도하세요.")
             return
         try:
             snapshot = deepcopy(snapshot or self.window.multi_execution_snapshot(include_tasks=mode == "run"))
         except (KeyError, ValueError, TypeError) as error:
-            self.notice.setText(f"시작 탭의 작업 설정을 확인하세요: {error}")
+            self.report_status(f"시작 탭의 작업 설정을 확인하세요: {error}")
             return
         valid = []
         for session_id in ids:
@@ -302,7 +359,7 @@ class MultiExecutionPanel(QWidget):
                 self.manager.validate_start(session_id, snapshot)
                 valid.append(session_id)
             except ValueError as error:
-                self.notice.setText(str(error))
+                self.report_status(str(error))
                 return  # A partial batch must never trigger global completion actions.
         if not valid:
             return
@@ -314,7 +371,7 @@ class MultiExecutionPanel(QWidget):
             try:
                 self.manager.start(session_id, snapshot, mode)
             except Exception as error:
-                self.notice.setText(str(error))
+                self.report_status(str(error))
                 self.manager.mark_wave_failure(session_id, error)
                 break
 
@@ -325,7 +382,7 @@ class MultiExecutionPanel(QWidget):
         card = self.cards.get(session_id)
         preferences = ({"adb_path": card.adb_path.text(), "address": card.address.text()} if card else self.default_preferences())
         preset = card.preset_combo.currentData() if card else None
-        self.notice.setText("interface.json의 실행 중인 대상들을 탐색하고 있습니다…")
+        self.report_status("interface.json의 실행 중인 대상들을 탐색하고 있습니다…")
         self.discovery_worker = worker = DiscoveryWorker(snapshot, preferences, preset, self)
         worker.finished.connect(lambda: self._discovered(worker, session_id, snapshot))
         worker.start()
@@ -339,7 +396,7 @@ class MultiExecutionPanel(QWidget):
             self.refresh()
             return
         if session_id is not None and session_id not in self.cards:
-            self.notice.setText("삭제된 인스턴스의 탐색 결과를 무시했습니다.")
+            self.report_status("삭제된 인스턴스의 탐색 결과를 무시했습니다.")
             self.refresh()
             return
         if session_id is not None:
@@ -371,7 +428,7 @@ class MultiExecutionPanel(QWidget):
                     card.emulator_combo.addItem(emulator["label"], emulator)
             if ids:
                 self.start_sessions(ids, "check", snapshot)
-        self.notice.setText(f"대상 {len(found)}개 확인." + (" " + " / ".join(errors) if errors else ""))
+        self.report_status(f"대상 {len(found)}개 확인." + (" " + " / ".join(errors) if errors else ""))
         self.refresh()
 
     @property
