@@ -37,3 +37,9 @@ SDK 연결 전 원본 상태 저장·크기 조절, 비활성 일반 창 표시,
 현재 런타임은 PI 전체를 구현한 범용 클라이언트는 아닙니다. Win32 `window_regex`가 필요하며 첫 번째 리소스를 사용합니다. `class_regex`만을 사용하는 검색, `import`, `attach_resource_path`, Agent/pretask 선언 등의 처리를 보장하지 않습니다. 기본 구성 테스트 통과를 PI 전체 호환 또는 다른 게임의 실제 최소화·캡처 성공으로 해석하지 않습니다.
 
 스펙 기준: [MaaFramework 5.12.3 Project Interface V2](https://github.com/MaaXYZ/MaaFramework/blob/v5.12.3/docs/en_us/3.3-ProjectInterfaceV2.md).
+
+## 다중 실행
+
+`test_multi_execution.py`, `test_multi_execution_ui.py`는 대상 중복/다른 세션 창의 최소화 차단, 프리셋 허용, 공통 실행 설정의 깊은 복사, 개별 중지·삭제·앱 종료 대기, 전체 그룹 완료, 일부 spawn 실패/비정상 프로세스 종료, 자동 탐색 도중 삭제, 고정 도구모음과 카드 스크롤, 라이트/다크 배치, 연결 정보만 저장·복원하는지 검증한다. 실제 세션 프로세스는 모의 객체로 대체한다.
+
+선택 검증: `.venv/Scripts/python.exe -X faulthandler UnitTest/native_multi_execution_probe.py`. 별도 `spawn` 프로세스마다 실제 SDK Resource/Tasker와 합성 CustomController를 생성한다. A만 중지하고 B가 완료되는지, 독립 PID/정상 정리/종료를 3회 확인한다. 실제 게임 창/ADB/시스템 완료 동작은 수행하지 않는다. 기본 offscreen unittest와 분리되어 있으며 Windows IPC를 허용하는 환경이 필요하다.

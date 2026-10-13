@@ -91,7 +91,7 @@ class ExtraFeaturesUITests(unittest.TestCase):
         label = QLabel("테스트 기능 내용", contents)
         layout.addWidget(label)
         index = self.panel.add_feature_page("테스트 기능", contents)
-        self.assertEqual(index, 1)
+        self.assertEqual(index, 2)
         self.open_extras()
         self.panel.navigation.setCurrentRow(index)
         QApplication.processEvents()
@@ -103,8 +103,9 @@ class ExtraFeaturesUITests(unittest.TestCase):
         self.assertIs(self.panel.pages.currentWidget().widget(), contents)
 
     def test_default_is_only_an_honest_placeholder_without_business_actions(self):
-        self.assertEqual(self.panel.navigation.count(), 1)
-        self.assertEqual(self.panel.navigation.item(0).text(), "안내")
+        self.assertEqual(self.panel.navigation.count(), 2)
+        self.assertEqual(self.panel.navigation.item(0).text(), "다중 실행")
+        self.assertEqual(self.panel.navigation.item(1).text(), "안내")
         label = self.panel.findChild(QLabel, "settingsSectionDescription")
         self.assertIn("아직 등록된 추가 기능이 없습니다.", label.text())
         self.assertIs(self.ui.mainPages.currentWidget(), self.ui.mainTab)
@@ -112,6 +113,7 @@ class ExtraFeaturesUITests(unittest.TestCase):
     def test_light_dark_surfaces_and_minimum_width_fit_after_collapse(self):
         self.window.resize(1100, 650)
         self.open_extras()
+        self.panel.navigation.setCurrentRow(1)
         card = self.panel.findChild(QWidget, "extraFeatureCard")
         for theme, card_color, bar_color in (("light", "#ffffff", "#e2e8f0"),
                                              ("dark", "#172238", "#30415e")):

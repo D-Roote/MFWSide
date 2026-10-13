@@ -81,17 +81,21 @@ class ExtraFeaturesPanel(QWidget):
         self.navigation_toggle.setToolTip(label)
         self.navigation_collapsed_changed.emit(collapsed)
 
-    def add_feature_page(self, title, contents):
+    def add_feature_page(self, title, contents, *, scrollable=True, index=None):
         """Register contents in an owned, resizable scroll page and its list item."""
-        scroll = QScrollArea(self.pages)
-        scroll.setObjectName("extraFeatureScroll")
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setWidget(contents)
-        index = self.pages.addWidget(scroll)
-        self.navigation.addItem(title)
+        page = contents
+        if scrollable:
+            page = QScrollArea(self.pages)
+            page.setObjectName("extraFeatureScroll")
+            page.setFrameShape(QFrame.Shape.NoFrame)
+            page.setWidgetResizable(True)
+            page.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            page.setWidget(contents)
+        index = self.pages.count() if index is None else index
+        self.pages.insertWidget(index, page)
+        self.navigation.insertItem(index, title)
         if self.navigation.currentRow() < 0:
             self.navigation.setCurrentRow(0)
-        self.feature_page_added.emit(scroll)
+        if scrollable:
+            self.feature_page_added.emit(page)
         return index

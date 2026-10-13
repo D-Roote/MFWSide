@@ -349,10 +349,12 @@ class MonitorCoordinator(QObject):
         return not self.busy and not self.service.needs_cleanup
 
     def _sync(self):
+        multi = getattr(self.window, "multi_panel", None)
+        multi_active = multi is not None and not multi.ready_to_close
         status = "작업 실행 중 화면은 실행 컨트롤러로 캡처합니다. 대상 변경은 종료 후 가능합니다." if self.window.isRunning else self.status
         for panel in self.panels:
             panel.sync(self.service.presets, self.preset_name, self.targets, self.target_key,
-                       self.preferences, status, self.busy or self.streaming, self.window.isRunning,
+                       self.preferences, status, self.busy or self.streaming, self.window.isRunning or multi_active,
                        self.service.controller is not None)
             panel.disconnect_button.setEnabled(
                 not self.shutting_down and self.pending_start is None
@@ -467,6 +469,9 @@ class MonitorCoordinator(QObject):
                     except Exception:
                         pass  # Metadata is optional; never interrupt display.
             else:
+                multi = getattr(self.window, "multi_panel", None)
+                if multi is not None and not multi.ready_to_close:
+                    raise PreviewNotReady("다중 실행이 끝난 뒤 기본 화면 모니터링을 재개합니다.")
                 if self.service.controller is None and self.streaming:
                     if self._resume_connection is None:
                         raise PreviewNotReady("화면 캡처 연결이 준비되기를 기다리고 있습니다.")
@@ -642,6 +647,9 @@ class MonitorCoordinator(QObject):
         self.busy_changed.emit()
 
     def discover(self):
+        multi = getattr(self.window, "multi_panel", None)
+        if multi is not None and not multi.ready_to_close:
+            return
         if self.busy or self.window.isRunning or self.shutting_down:
             return
         self.stop_preview()
@@ -652,6 +660,9 @@ class MonitorCoordinator(QObject):
         self._request("discover", lambda: self.service.discover(name, preferences, program))
 
     def connect_target(self):
+        multi = getattr(self.window, "multi_panel", None)
+        if multi is not None and not multi.ready_to_close:
+            return
         if self.busy or self.window.isRunning or self.shutting_down:
             return
         self.stop_preview()

@@ -29,6 +29,7 @@ from app.controls import PopupOnlyWheelComboBox
 from app.settingsUI import AssociatedControlLabel, SettingsPanel
 from app.monitorUI import MonitorCoordinator
 from app.extraFeaturesUI import ExtraFeaturesPanel
+from app.multiExecutionUI import MultiExecutionPanel
 from app.afterActions import AfterActionPreferences, WindowsAfterActionBackend, capture_window_target
 from app.afterActionUI import AfterActionPanel
 
@@ -1641,6 +1642,18 @@ class MainWindow(QMainWindow):
             if section.property("monitorSectionKey") == "screen"
         )
         self.monitor = MonitorCoordinator(self, connection_content, screen_content)
+        self.multi_panel = MultiExecutionPanel(self, self.ui.extraFeaturesTab)
+        self.extra_features_panel.add_feature_page("다중 실행", self.multi_panel, scrollable=False, index=0)
+        self.extra_features_panel.navigation.setCurrentRow(0)
+        setup_rounded_vertical_scrollbar(self.multi_panel.cards_scroll)
+        self.multi_panel.manager.activity_changed.connect(self._multi_activity_changed)
+        self.multi_panel.manager.wave_finished.connect(self._multi_wave_finished)
+        self.multi_panel.shutdown_ready.connect(self._finish_pending_close)
+        try:
+            multi_saved = json.loads((self.runtime.user_dir / "config" / "user_config.json").read_text(encoding="utf-8"))
+            self.multi_panel.manager.restore(multi_saved.get("multi_instances"))
+        except (OSError, ValueError, AttributeError):
+            pass
         self.monitor.busy_changed.connect(self.check_start_button_state)
         self.monitor.shutdown_ready.connect(self._finish_pending_close)
         self.monitor.preset_changed.connect(self._refresh_after_action_summary)
@@ -1702,6 +1715,8 @@ class MainWindow(QMainWindow):
         self.ui.endStatusLabel.setText(description)
         self.ui.endStatusLabel.setToolTip(description)
         editable = not self.isRunning and not self._close_pending and not self._completion_pending and not self._closing
+        if hasattr(self, "multi_panel"):
+            editable = editable and not self.multi_panel.manager.active
         self.ui.endSettingBtn.setEnabled(editable)
         if self.after_action_panel is not None:
             self.after_action_panel.set_controller_type(controller_type)
@@ -1852,6 +1867,49 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.extra_features_panel)
         self.extra_features_panel.navigation_collapsed_changed.connect(self._schedule_ui_state_save)
+
+    def multi_execution_snapshot(self, include_tasks=True):
+        queue = self.build_execution_queue() if include_tasks else []
+        return deepcopy({
+            "interface": self.runtime.interface, "interface_path": str(self.runtime.interface_path),
+            "resource": self.runtime.resource_config, "user_dir": str(self.runtime.user_dir),
+            "queue": queue, "controller": self.settings_panel.controller_settings(),
+            "program": self.settings_panel.program_settings(), "settings": self.settings_panel.config,
+            "minimize": self.settings_panel.minimize_enabled(),
+            "clear_log": self.settings_panel.clear_log_on_start_enabled(),
+            "after_actions": self.after_actions.current if any(entry != PROGRAM_LAUNCH_ENTRY for entry, _ in queue) else {},
+        })
+
+    def _multi_activity_changed(self):
+        if hasattr(self, "option_list_widget"):
+            self.set_options_locked(self.isRunning or self.multi_panel.manager.active)
+            self.check_start_button_state()
+            self._refresh_after_action_summary()
+        self.monitor._sync()
+        self._finish_pending_close()
+
+    def _multi_wave_finished(self, results, actions):
+        if self._closing or not results or not all(result["succeeded"] for result in results):
+            return
+        from app.afterActions import WindowTarget
+        self.after_actions.consume()
+        self.save_user_config()
+        for result in results:
+            target = result.get("target")
+            if actions.get("close_program") and target:
+                try:
+                    self.after_action_backend.close_program(WindowTarget(**target))
+                except (OSError, RuntimeError) as error:
+                    self.append_log(f"다중 실행 완료 후 대상 종료 실패: {error}")
+            if result["connection"].get("target", {}).get("kind") == "Adb" and (
+                    actions.get("close_app") or actions.get("close_emulator")):
+                self.append_log("ADB 앱·에뮬레이터 종료는 UI 준비 단계이므로 실제 종료 요청을 생략합니다.")
+        global_actions = dict(actions)
+        for key in ("close_program", "close_app", "close_emulator"):
+            global_actions[key] = False
+        if any(global_actions.values()):
+            self._completion_pending = True
+            QTimer.singleShot(0, lambda: self._execute_after_actions(global_actions, None))
 
     def _setup_workspace_navigation(self):
         self.page_navigation = QButtonGroup(self)
@@ -2238,6 +2296,9 @@ class MainWindow(QMainWindow):
         return True
 
     def on_task_start(self):
+        if not self.multi_panel.ready_to_close:
+            self.append_log("다중 실행 또는 대상 탐색이 끝난 뒤 기본 작업을 시작하세요.")
+            return
         if self.worker is not None or self.stop_worker is not None or self._close_pending or self._completion_pending or self._closing:
             return
         if self.monitor.prepare_task_start(self.on_task_start):
@@ -2278,6 +2339,7 @@ class MainWindow(QMainWindow):
         self.worker.start()
 
         self.isRunning = True
+        self.multi_panel.refresh()
         self.monitor.task_state_changed()
 
         self.ui.workStartBtn.setText("작업 중지")
@@ -2339,6 +2401,7 @@ class MainWindow(QMainWindow):
         was_running = self.isRunning
         if was_running:
             self.isRunning = False
+            self.multi_panel.refresh()
             self.monitor.task_state_changed()
             self.ui.workStartBtn.setText("작업 시작")
             self.ui.workStartBtn.clicked.disconnect(self.on_task_stop)
@@ -2358,7 +2421,8 @@ class MainWindow(QMainWindow):
         stop_running = self.stop_worker is not None
 
         self.monitor.shutdown()
-        if worker_running or stop_running or not self.monitor.ready_to_close:
+        self.multi_panel.shutdown()
+        if worker_running or stop_running or not self.monitor.ready_to_close or not self.multi_panel.ready_to_close:
             self._close_pending = True
             event.ignore()
             if worker_running:
@@ -2379,7 +2443,8 @@ class MainWindow(QMainWindow):
 
         worker_running = self.worker is not None
         stop_running = self.stop_worker is not None
-        if not worker_running and not stop_running and self.monitor.ready_to_close:
+        if not worker_running and not stop_running and self.monitor.ready_to_close and self.multi_panel.ready_to_close:
+            self._close_pending = False
             QTimer.singleShot(0, self.close)
 
     def setup_dynamic_options(self):
@@ -2998,6 +3063,9 @@ class MainWindow(QMainWindow):
         self.on_user_config_changed()
 
     def check_start_button_state(self):
+        if hasattr(self, "multi_panel") and not self.multi_panel.ready_to_close and not self.isRunning:
+            self.ui.workStartBtn.setEnabled(False)
+            return
         if self._completion_pending or self._closing:
             self.ui.workStartBtn.setEnabled(False)
             return
@@ -3129,6 +3197,7 @@ class MainWindow(QMainWindow):
                         "monitor_height_weights": self.ui.monitorSectionsWidget.height_weights(),
                         "ui_state": self._capture_ui_state() if self._ui_state_ready else self._saved_ui_state,
                         "after_actions": dict(self.after_actions.saved),
+                        "multi_instances": self.multi_panel.manager.saved_sessions() if hasattr(self, "multi_panel") else [],
                     },
                     f,
                     ensure_ascii=False,

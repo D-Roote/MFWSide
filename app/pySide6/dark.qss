@@ -415,6 +415,8 @@ QScrollArea#extraFeatureScroll {
 }
 
 QFrame#settingsSection,
+QFrame#multiToolbar,
+QFrame#multiInstanceCard,
 QFrame#extraFeatureCard {
     background-color: #172238;
     border-color: #30415E;
