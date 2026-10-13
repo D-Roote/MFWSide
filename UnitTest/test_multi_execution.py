@@ -210,6 +210,31 @@ class SessionManagerTests(unittest.TestCase):
         data["minimize"] = False
         self.assertTrue(self.manager.start(sid, data))
 
+    def test_adb_sessions_cannot_minimize_the_same_window(self):
+        ids = []
+        for address in ("device-a", "device-b"):
+            adb = connection("Adb", address)
+            adb["emulator"] = {"pid": 99, "hwnd": 88}
+            ids.append(self.manager.add(adb))
+        data = snapshot()
+        data["minimize"] = True
+        for sid in ids:
+            with self.assertRaisesRegex(ValueError, "다른 인스턴스의 창과 겹칩니다"):
+                self.manager.start(sid, data)
+            self.assertIsNone(self.manager.sessions[sid].process)
+
+    def test_distinct_adb_minimize_windows_keep_independent_device_targets(self):
+        data = snapshot()
+        data["minimize"] = True
+        for address, hwnd in (("device-a", 88), ("device-b", 89)):
+            adb = connection("Adb", address)
+            adb["emulator"] = {"pid": 99, "hwnd": hwnd}
+            self.manager.add(adb)
+        for session in self.manager.sessions.values():
+            self.assertTrue(self.manager.start(session.id, data))
+            self.assertEqual(session.process.args[1]["target"], session.connection["target"])
+            self.assertEqual(session.process.args[1]["emulator"], session.connection["emulator"])
+
     def test_malformed_saved_nested_settings_are_skipped(self):
         self.manager.restore([{"connection": {"target": 12}}, {"connection": {"preferences": []}},
                               {"connection": {"emulator": "bad"}}, {"connection": connection()}])
@@ -245,6 +270,7 @@ class SessionRuntimeTests(unittest.TestCase):
         with patch("app.monitoring.window_process_info", return_value=(99, "emulator.exe")):
             self.assertTrue(runtime._minimize_window_for_task())
         runtime._user32.ShowWindow.assert_called_once_with(88, 7)
+        self.assertEqual(runtime.connection["target"]["key"], "device")
         runtime.release_session()
         runtime._user32.SetWindowPlacement.assert_not_called()
 

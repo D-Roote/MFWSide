@@ -117,7 +117,7 @@ class InstanceCard(QFrame):
         self.emulator_combo = PopupOnlyWheelComboBox()
         self.emulator_combo.setObjectName("monitorComboBox")
         self.emulator_combo.setAccessibleName("ADB 편의 최소화 창")
-        self.emulator_combo.addItem("편의 최소화 창 없음", {})
+        self.emulator_combo.addItem("최소화 대상 선택", {})
         for widget in (self.preset_combo, self.target_combo, self.adb_path, self.address, self.emulator_combo):
             widget.setMinimumWidth(0)
             widget.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
@@ -165,10 +165,11 @@ class InstanceCard(QFrame):
         preset = connection.get("preset") or self.panel.preferred_preset()
         self.preset_combo.setCurrentIndex(self.preset_combo.findData(preset))
         target = connection.get("target")
+        self.targets = [deepcopy(target)] if target else []
         self.target_combo.clear()
         self.target_combo.addItem("대상을 선택하세요", None)
         if target:
-            self.target_combo.addItem(target.get("label") or target.get("key"), deepcopy(target))
+            self.target_combo.addItem(target.get("label") or target.get("key"), target["key"])
             self.target_combo.setCurrentIndex(1)
         preferences = connection.get("preferences", self.panel.default_preferences())
         self.adb_path.setText(preferences.get("adb_path", ""))
@@ -196,13 +197,21 @@ class InstanceCard(QFrame):
             return
         self.target_combo.blockSignals(True)
         self.target_combo.clear()
+        self.targets = []
         self.target_combo.addItem("대상을 선택하세요", None)
         self.target_combo.blockSignals(False)
         self._show_adb_fields()
         self._configure()
 
+    def current_target(self):
+        # Native ADB method masks are uint64 (often > signed int64). QVariant
+        # recursively converts dictionaries and overflows on those values.
+        # Keep the original DTO in Python; Qt only stores the string identity.
+        key = self.target_combo.currentData()
+        return next((target for target in self.targets if target.get("key") == key), None)
+
     def _target_changed(self):
-        target = self.target_combo.currentData()
+        target = self.current_target()
         if not self._syncing and target and target.get("kind") == "Adb":
             self.address.setText(target["key"])
         self._configure()
@@ -210,7 +219,7 @@ class InstanceCard(QFrame):
     def _configure(self):
         if self._syncing:
             return
-        target = self.target_combo.currentData()
+        target = self.current_target()
         preferences = {"adb_path": self.adb_path.text().strip(), "address": self.address.text().strip()}
         adb = self.adb_path.isVisible() or any(p["name"] == self.preset_combo.currentData() and p["type"] == "Adb"
                                              for p in self.panel.presets)
@@ -405,12 +414,13 @@ class MultiExecutionPanel(QWidget):
             card.target_combo.blockSignals(True)
             card.target_combo.clear()
             card.target_combo.addItem("대상을 선택하세요", None)
-            for connection in found:
-                card.target_combo.addItem(connection["target"]["label"], connection["target"])
+            card.targets = [deepcopy(connection["target"]) for connection in found]
+            for target in card.targets:
+                card.target_combo.addItem(target["label"], target["key"])
             card.target_combo.blockSignals(False)
             card.emulator_combo.blockSignals(True)
             card.emulator_combo.clear()
-            card.emulator_combo.addItem("편의 최소화 창 없음", {})
+            card.emulator_combo.addItem("최소화 대상 선택", {})
             for emulator in worker.emulators:
                 card.emulator_combo.addItem(emulator["label"], emulator)
                 if emulator == previous_emulator:

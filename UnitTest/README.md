@@ -40,6 +40,8 @@ SDK 연결 전 원본 상태 저장·크기 조절, 비활성 일반 창 표시,
 
 ## 다중 실행
 
+`test_multi_execution_ui.py`는 실제 MuMu 입력 마스크 `(1 << 64) - 9`를 사용해 자동 추가/연결 확인, 개별 대상 전환과 저장 정보 복원에서 전체 장치 정보가 손실 없이 유지되는지 검사한다. Qt userData에는 문자열 ID만 저장해 signed int64 오버플로와 부분 카드 생성을 방지한다. 시작 탭 단일 연결은 인스턴스를 만들거나 숨겨진 추가 기능 페이지를 표시하지 않는지 확인한다. `test_gui_worker_delivery.py`는 실제 QThread를 사용하되 작업을 모의해 발견/연결 완료가 GUI 스레드에 전달되는지 검증한다.
+
 `test_multi_execution.py`, `test_multi_execution_ui.py`는 대상 중복/다른 세션 창의 최소화 차단, 프리셋 허용, 공통 실행 설정의 깊은 복사, 개별 중지·삭제·앱 종료 대기, 전체 그룹 완료, 일부 spawn 실패/비정상 프로세스 종료, 자동 탐색 도중 삭제, 고정 도구모음과 카드 스크롤, 라이트/다크 배치, 연결 정보만 저장·복원하는지 검증한다. 실제 세션 프로세스는 모의 객체로 대체한다.
 
 선택 검증: `.venv/Scripts/python.exe -X faulthandler UnitTest/native_multi_execution_probe.py`. 별도 `spawn` 프로세스마다 실제 SDK Resource/Tasker와 합성 CustomController를 생성한다. A만 중지하고 B가 완료되는지, 독립 PID/정상 정리/종료를 3회 확인한다. 실제 게임 창/ADB/시스템 완료 동작은 수행하지 않는다. 기본 offscreen unittest와 분리되어 있으며 Windows IPC를 허용하는 환경이 필요하다.

@@ -4,11 +4,13 @@ import os
 from pathlib import Path
 import unittest
 from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
 
 import test_runtime_lifecycle as fixtures
 from test_multi_execution import FakeContext, connection
 from PySide6.QtWidgets import QApplication, QFrame, QLabel
 from PySide6.QtTest import QTest
+from app.monitoring import ConnectionTarget
 
 
 class MultiExecutionUITests(unittest.TestCase):
@@ -39,6 +41,101 @@ class MultiExecutionUITests(unittest.TestCase):
         data = connection(value=value)
         data["preset"] = "Win32PrintWindow"
         return self.panel.manager.add(data)
+
+    def adb_connection(self, address="127.0.0.1:16480"):
+        if not any(preset["name"] == "Adb" for preset in self.panel.presets):
+            preset = {"name": "Adb", "type": "Adb", "label": "ADB"}
+            self.panel.presets.append(preset)
+            self.window.runtime.interface["controller"].append(preset)
+            self.window.runtime.resource_config["controller"].append("Adb")
+        adb_path = self.window.runtime.user_dir / "adb.exe"
+        adb_path.touch()
+        data = connection("Adb", address)
+        data["preferences"] = {"adb_path": "", "address": address}
+        data["target"]["device"] = {
+            "adb_path": str(adb_path), "address": address,
+            "input_methods": (1 << 64) - 9, "screencap_methods": 64,
+            "config": {"extras": {"mumu": {"enable": True, "index": 3}}},
+        }
+        return data
+
+    def test_auto_discovery_connects_uint64_adb_devices_without_partial_cards(self):
+        found = [self.adb_connection(), self.adb_connection("127.0.0.1:16384")]
+        worker = MagicMock(result=(found, []), emulators=[])
+        with patch.object(self.window.monitor, "prepare_task_start", return_value=False):
+            self.panel._discovered(worker, None, self.window.multi_execution_snapshot(include_tasks=False))
+        self.assertEqual(len(self.panel.cards), 2)
+        self.assertEqual(self.panel.cards_contents.findChildren(QFrame, "multiInstanceCard"),
+                         list(self.panel.cards.values()))
+        for session in self.panel.manager.sessions.values():
+            self.assertEqual(session.state, "checking")
+            self.assertEqual(session.process.args[1]["target"]["device"]["input_methods"], (1 << 64) - 9)
+
+    def test_individual_discovery_preserves_uint64_metadata_on_target_change(self):
+        first, second = self.adb_connection(), self.adb_connection("127.0.0.1:16384")
+        sid = self.panel.manager.add({"preset": "Adb"})
+        worker = MagicMock(result=([first, second], []), emulators=[])
+        self.panel._discovered(worker, sid, self.window.multi_execution_snapshot(include_tasks=False))
+        card = self.panel.cards[sid]
+        self.assertEqual(card.emulator_combo.currentText(), "최소화 대상 선택")
+        self.assertEqual(card.emulator_combo.currentData(), {})
+        card.target_combo.setCurrentIndex(2)
+        value = self.panel.manager.sessions[sid].connection
+        self.assertEqual(value["target"], second["target"])
+        self.assertEqual(value["preferences"]["address"], second["target"]["key"])
+        self.assertEqual(value["target"]["device"]["input_methods"], (1 << 64) - 9)
+
+    def test_restored_uint64_device_card_stays_inside_hidden_feature_page(self):
+        data = self.adb_connection()
+        self.window.ui.dashboardNavButton.click()
+        self.panel.manager.restore([{"title": "Restored", "connection": data}])
+        QApplication.processEvents()
+        self.assertEqual(len(self.panel.cards), 1)
+        card = next(iter(self.panel.cards.values()))
+        self.assertIs(card.parentWidget(), self.panel.cards_contents)
+        self.assertFalse(card.isVisible())
+        self.assertFalse(self.panel.findChild(QFrame, "multiToolbar").isVisible())
+        self.assertEqual(self.panel.manager.saved_sessions()[0]["connection"], data)
+
+    def test_real_discovery_completion_creates_complete_cards_on_gui_thread(self):
+        data = self.adb_connection()
+        with patch("app.multiExecutionUI.discover_connections", return_value=([data], [])), \
+                patch("maa.toolkit.Toolkit.find_desktop_windows", return_value=[]), \
+                patch.object(self.window.monitor, "prepare_task_start", return_value=False):
+            self.panel.auto_button.click()
+            for _ in range(100):
+                if self.panel.discovery_worker is None:
+                    break
+                QTest.qWait(10)
+            self.assertIsNone(self.panel.discovery_worker)
+        self.assertEqual(len(self.panel.cards), 1)
+        card = next(iter(self.panel.cards.values()))
+        self.assertIs(card.thread(), self.fixture.app.thread())
+        self.assertEqual(card.current_target(), data["target"])
+        self.assertEqual(card.target_combo.currentData(), data["target"]["key"])
+
+    def test_start_page_connection_does_not_add_or_reveal_instances(self):
+        data = self.adb_connection()
+        metadata = data["target"]["device"]
+        device = SimpleNamespace(**metadata)
+        target = ConnectionTarget(data["target"]["key"], "MuMu", "Adb", device=device)
+        monitor = self.window.monitor
+        monitor.service.presets.append({"name": "Adb", "type": "Adb"})
+        monitor.preset_name, monitor.targets, monitor.target_key = "Adb", [target], target.key
+        self.window.ui.dashboardNavButton.click()
+        with patch.object(monitor.service, "connect", return_value=target) as connect:
+            monitor.connect_target()
+            for _ in range(100):
+                if monitor.worker is None:
+                    break
+                QTest.qWait(10)
+            self.assertIsNone(monitor.worker)
+        connect.assert_called_once()
+        self.assertIn("연결 성공", monitor.status)
+        self.assertFalse(self.panel.manager.sessions)
+        self.assertFalse(self.panel.cards)
+        self.assertFalse(self.panel.isVisible())
+        self.assertFalse(self.panel.findChild(QFrame, "multiToolbar").isVisible())
 
     def test_fixed_toolbar_and_scrolling_cards_fit_light_and_dark(self):
         ids = [self.add(i + 1) for i in range(15)]
@@ -118,6 +215,8 @@ class MultiExecutionUITests(unittest.TestCase):
         card = self.panel.cards[sid]
         QApplication.processEvents()
         collapsed_height = card.height()
+        self.assertEqual(card.emulator_combo.currentText(), "최소화 대상 선택")
+        self.assertEqual(card.emulator_combo.currentData(), {})
         self.assertLessEqual(collapsed_height, 100)
         self.assertTrue(card.adb_details_toggle.isVisible())
         self.assertFalse(card.adb_details.isVisible())
