@@ -43,3 +43,9 @@ SDK 연결 전 원본 상태 저장·크기 조절, 비활성 일반 창 표시,
 `test_multi_execution.py`, `test_multi_execution_ui.py`는 대상 중복/다른 세션 창의 최소화 차단, 프리셋 허용, 공통 실행 설정의 깊은 복사, 개별 중지·삭제·앱 종료 대기, 전체 그룹 완료, 일부 spawn 실패/비정상 프로세스 종료, 자동 탐색 도중 삭제, 고정 도구모음과 카드 스크롤, 라이트/다크 배치, 연결 정보만 저장·복원하는지 검증한다. 실제 세션 프로세스는 모의 객체로 대체한다.
 
 선택 검증: `.venv/Scripts/python.exe -X faulthandler UnitTest/native_multi_execution_probe.py`. 별도 `spawn` 프로세스마다 실제 SDK Resource/Tasker와 합성 CustomController를 생성한다. A만 중지하고 B가 완료되는지, 독립 PID/정상 정리/종료를 3회 확인한다. 실제 게임 창/ADB/시스템 완료 동작은 수행하지 않는다. 기본 offscreen unittest와 분리되어 있으며 Windows IPC를 허용하는 환경이 필요하다.
+
+## 기본 인터페이스와 ADB 자동 실행
+
+`test_interface_startup.py`는 interface 누락 시 Win32 UI/리소스·작업 차단, ADB-only 선언, 잘못된 최상위 JSON을 확인한다. `test_adb_program_settings.py`는 Windows 바로가기 대상의 인수·공백·백슬래시·따옴표 파싱, 빈/잘못된/삭제된 경로에서 자동 검색 차단, 타입 복원 순서/저장, 긴 설명문 전체 표시 및 작은 창/양 테마의 가로 넘침을 검증한다.
+
+`test_adb_startup.py`는 모의 프로세스와 가상 시계로 유효 PID/60초 대기/인수/쉘 미사용, 시작 전·대기 중 취소, 비정상 종료/경로·주소 미확인, 런처 위임, 같은 PID·경로 또는 명시 창만 최소화/재최소화·크기 조절·복원 없음, 메인 ADB 연결·Tasker 순서와 실패 차단, 모니터 재연결용 기기 메타데이터를 검증한다. 테스트용 EXE 파일은 빈 파일이며 Popen과 ADB 입력은 전부 모의한다.

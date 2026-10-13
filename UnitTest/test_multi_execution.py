@@ -242,7 +242,7 @@ class SessionRuntimeTests(unittest.TestCase):
         data = connection("Adb", "device")
         data["emulator"] = {"hwnd": 88, "pid": 99}
         runtime = self.runtime(data)
-        with patch("app.sessionRuntime.window_process_info", return_value=(99, "emulator.exe")):
+        with patch("app.monitoring.window_process_info", return_value=(99, "emulator.exe")):
             self.assertTrue(runtime._minimize_window_for_task())
         runtime._user32.ShowWindow.assert_called_once_with(88, 7)
         runtime.release_session()
@@ -260,10 +260,10 @@ class SessionRuntimeTests(unittest.TestCase):
                                                 input_methods=2, screencap_methods=3)
             self.assertIsNotNone(runtime._controller_sink_id)
 
-    def test_adb_builtin_exe_launch_is_an_explicit_noop(self):
+    def test_adb_builtin_launch_rejects_missing_manual_target(self):
         runtime = self.runtime(connection("Adb", "device"))
         with patch("app.runtime.subprocess.Popen") as launch:
-            self.assertTrue(runtime._launch_program({})[0])
+            self.assertFalse(runtime._launch_program({})[0])
         launch.assert_not_called()
 
     def test_unsupported_preset_and_invalid_target_are_rejected(self):

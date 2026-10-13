@@ -222,6 +222,31 @@ class ContinuousPreviewTests(unittest.TestCase):
         connect.assert_called_once_with(*self.monitor._resume_connection)
         self.assertTrue(self.monitor.streaming)
 
+    def test_adb_task_preview_keeps_address_and_reconnects_without_win32_window_check(self):
+        self.monitor.service.presets.append({"name": "Adb", "type": "Adb"})
+        self.monitor.preset_name = "Adb"
+        self.monitor.preferences = {"adb_path": "adb.exe", "address": "device-b"}
+        self.window.isRunning = True
+        self.monitor.service.controller = None
+        target = ConnectionTarget("device-b", "ADB device", "Adb")
+        self.window.runtime.preview_connection_target.return_value = ("Adb", target)
+        self.window.runtime.capture_preview_frame.return_value = np.zeros((10, 20, 3), np.uint8)
+        with patch.object(self.monitor.service, "connect") as connect:
+            self.start_preview()
+            self.assertEqual(self.monitor._resume_connection[1], "device-b")
+            self.assertEqual(self.monitor.service._discovered_adb_path, "adb.exe")
+            connect.assert_not_called()
+        self.window.isRunning = False
+        self.monitor.task_state_changed()
+        def reconnect(*args):
+            self.monitor.service.controller = self.controller
+        with patch.object(self.monitor.service, "connect", side_effect=reconnect) as connect, \
+                patch.object(self.monitor.service, "ensure_preview_available") as win32_check:
+            self.capture_again()
+        connect.assert_called_once_with(*self.monitor._resume_connection)
+        win32_check.assert_not_called()
+        self.assertTrue(self.monitor.streaming)
+
     def test_minimized_post_task_target_waits_without_reconnect_then_recovers(self):
         self.start_preview()
         image = self.screen.preview.image.cacheKey()

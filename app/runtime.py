@@ -11,13 +11,17 @@ import ctypes
 from ctypes import wintypes
 
 from maa.context import ContextEventSink
-from maa.controller import ControllerEventSink, Win32Controller
+from maa.controller import AdbController, ControllerEventSink, Win32Controller
 from maa.define import MaaWin32InputMethodEnum, MaaWin32ScreencapMethodEnum
 from maa.resource import Resource
 from maa.tasker import Tasker
 from maa.toolkit import Toolkit
 
 from app.pg_init import build_program_launch_command
+from app.adbStartup import (
+    adb_controller_options, adb_target_descriptor, launch_adb_program,
+    minimize_adb_window, prepare_adb_connection,
+)
 
 
 WIN32_METHOD_PRIORITY = ("screencap", "mouse", "keyboard")
@@ -189,6 +193,19 @@ class AppRuntime:
         self._minimize_focus_prepared = False
         self._program_started_for_session = False
         self._startup_window_guard = None
+        self._adb_execution_connection = {}
+        self._adb_launcher_pid = None
+        self._adb_launcher_path = None
+        self._adb_minimized_windows = set()
+        self._startup_cancellation_requested = None
+        self._startup_minimize_requested = False
+
+    @property
+    def is_adb(self):
+        return self.controller_config.get("type") == "Adb"
+
+    def _get_adb_execution_connection(self, program_settings):
+        return prepare_adb_connection((program_settings or {}).get("connection"))
 
     def _load_interface(self):
         try:
@@ -361,6 +378,8 @@ class AppRuntime:
         return MaaWin32InputMethodEnum[win32_config.get("keyboard", "PostMessage")]
 
     def _get_controller_log_message(self):
+        if self.is_adb:
+            return f"ADB 컨트롤러 연결: {self.controller_config['name']} · {self._adb_execution_connection['target']['key']}"
         screencap_name = self._get_screencap_method().name
         selection_suffix = {
             "partial": " / 설정 일부 일치",
@@ -382,6 +401,8 @@ class AppRuntime:
         return True
 
     def _resize_window_for_task(self, target_client_w=1280, target_client_h=720):
+        if self.is_adb:
+            return True
         if not self._target_hwnd or not self._user32.IsWindow(self._target_hwnd):
             return False
 
@@ -462,6 +483,8 @@ class AppRuntime:
         return False
 
     def _minimize_window_for_task(self):
+        if self.is_adb:
+            return minimize_adb_window(self)
         target_hwnd = getattr(self._target_hwnd, "value", self._target_hwnd)
         if not target_hwnd or not self._user32.IsWindow(target_hwnd):
             return False
@@ -729,6 +752,12 @@ class AppRuntime:
         cancellation_requested: Callable[[], bool] | None = None,
         prepare_minimize: bool = False,
     ):
+        if self._get_controller_config(controller_settings).get("type") == "Adb":
+            self.controller_config, self._controller_selection_status = self._select_controller_config(controller_settings)
+            self.controller = AdbController(**adb_controller_options(self._adb_execution_connection))
+            self._controller_activity = ControllerActivitySink()
+            self._controller_sink_id = self.controller.add_sink(self._controller_activity)
+            return (True, "ADB 컨트롤러를 생성했습니다.") if self._controller_sink_id is not None else (False, "컨트롤러 완료 콜백 연결에 실패했습니다.")
         if window is None:
             window, message = self._find_target_window(
                 controller_settings,
@@ -797,6 +826,8 @@ class AppRuntime:
         )
 
     def _launch_program(self, program_settings):
+        if self.is_adb:
+            return launch_adb_program(self, program_settings, self._startup_cancellation_requested, self._startup_minimize_requested)
         self._program_started_for_session = False
         if not isinstance(program_settings, dict):
             return False, "프로그램 실행 설정이 없습니다."
@@ -886,10 +917,16 @@ class AppRuntime:
 
         initialized = False
         try:
+            self.controller_config, self._controller_selection_status = self._select_controller_config(controller_settings)
+            self._startup_cancellation_requested = cancellation_requested
+            self._startup_minimize_requested = minimize_window
             if not self._toolkit_initialized:
                 if not Toolkit.init_option(str(self.user_dir)):
                     return False, "MaaFW Toolkit 초기화에 실패했습니다."
                 self._toolkit_initialized = True
+            if self.is_adb:
+                self._adb_execution_connection = self._get_adb_execution_connection(program_settings)
+                adb_controller_options(self._adb_execution_connection)
 
             loaded, load_message = self._load_resource()
             if not loaded:
@@ -911,11 +948,12 @@ class AppRuntime:
                 if not started:
                     return False, start_message
                 wait_timeout_seconds = float(program_settings.get("startup_wait_seconds", 60))
-                if self._program_started_for_session and not pipeline_task_requested:
+                if not self.is_adb and self._program_started_for_session and not pipeline_task_requested:
                     stable_window_seconds = PROGRAM_WINDOW_STABLE_SECONDS
                 if (
                     self._program_started_for_session
                     and pipeline_task_requested
+                    and not self.is_adb
                 ):
                     prepared_window, window_message = self._find_target_window(
                         controller_settings,
@@ -956,7 +994,7 @@ class AppRuntime:
             if not created:
                 return False, create_message
 
-            if self._program_started_for_session and pipeline_task_requested:
+            if not self.is_adb and self._program_started_for_session and pipeline_task_requested:
                 ready, ready_message = self._wait_for_started_program_ready(cancellation_requested)
                 if not ready:
                     return False, ready_message
@@ -1152,6 +1190,10 @@ class AppRuntime:
         """Read-only identity for reconnecting diagnostics AFTER task cleanup."""
         from app.monitoring import ConnectionTarget, PreviewNotReady, window_process_info
         with self._task_post_lock:
+            if self.is_adb:
+                if self.controller is None or not self.controller.connected:
+                    raise PreviewNotReady("작업 대상 정보가 아직 준비되지 않았습니다.")
+                return self.controller_config["name"], adb_target_descriptor(self._adb_execution_connection)
             hwnd = getattr(self._target_hwnd, "value", self._target_hwnd)
             if self.controller is None or not self.controller.connected or not hwnd:
                 raise PreviewNotReady("작업 대상 정보가 아직 준비되지 않았습니다.")
@@ -1227,6 +1269,10 @@ class AppRuntime:
                 self._program_started_for_session = False
                 self._window_size_prepared = False
                 self._minimize_focus_prepared = False
+                self._adb_launcher_pid = None
+                self._adb_launcher_path = None
+                self._adb_minimized_windows.clear()
+                self._startup_cancellation_requested = None
                 if cleanup_errors:
                     return False, " ".join(cleanup_errors)
                 return True, "Runtime 실행 상태를 정리했습니다."

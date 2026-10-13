@@ -6,7 +6,8 @@ from types import SimpleNamespace
 from maa.controller import AdbController
 
 from app.monitoring import supported_presets, window_process_info
-from app.runtime import AppRuntime, ControllerActivitySink, SW_SHOWMINNOACTIVE
+from app.runtime import AppRuntime, ControllerActivitySink
+from app.adbStartup import adb_controller_options, launch_adb_program, minimize_adb_window
 
 
 def target_identity(connection):
@@ -88,10 +89,12 @@ class SessionRuntime(AppRuntime):
     def _launch_program(self, program_settings):
         self._program_started_for_session = False
         if self.is_adb:
-            self.log_sink._emit("ADB 세션은 EXE 자동 실행을 생략합니다. 앱 실행은 작업 파이프라인을 사용합니다.")
-            return True, "ADB 연결 대상이 지정되어 있습니다."
+            return launch_adb_program(self, program_settings, self._startup_cancellation_requested, self._startup_minimize_requested)
         window, message = self._find_target_window()
         return window is not None, message
+
+    def _get_adb_execution_connection(self, program_settings):
+        return deepcopy(self.connection)
 
     def _create_controller(self, controller_settings=None, **kwargs):
         if not self.is_adb:
@@ -100,17 +103,11 @@ class SessionRuntime(AppRuntime):
                 return False, message
             kwargs["window"] = window
             return super()._create_controller(controller_settings, **kwargs)
-        target = self.connection["target"]
-        device = target.get("device", {})
-        preferences = self.connection.get("preferences", {})
-        adb_path = preferences.get("adb_path") or device.get("adb_path", "")
-        if not adb_path or not Path(adb_path).is_file():
-            return False, "ADB 실행 파일 경로를 확인하세요."
-        # Discovered method masks/config belong to the discovered ADB binary.
-        if device.get("adb_path") and Path(adb_path) != Path(device["adb_path"]):
-            device = {}
-        params = {key: deepcopy(device[key]) for key in ("screencap_methods", "input_methods", "config") if key in device}
-        self.controller = AdbController(adb_path=adb_path, address=target["key"], **params)
+        try:
+            options = adb_controller_options(self.connection)
+        except ValueError as error:
+            return False, str(error)
+        self.controller = AdbController(**options)
         self._controller_activity = ControllerActivitySink()
         self._controller_sink_id = self.controller.add_sink(self._controller_activity)
         if self._controller_sink_id is None:
@@ -123,18 +120,7 @@ class SessionRuntime(AppRuntime):
     def _minimize_window_for_task(self):
         if not self.is_adb:
             return super()._minimize_window_for_task()
-        emulator = self.connection.get("emulator") or {}
-        if not emulator:
-            self.log_sink._emit("ADB는 창 최소화 없이 작업할 수 있습니다. 편의 최소화 창은 선택하지 않았습니다.")
-            return True
-        hwnd, expected_pid = emulator.get("hwnd"), emulator.get("pid")
-        if type(hwnd) is not int or hwnd <= 0 or type(expected_pid) is not int or expected_pid <= 0:
-            return False
-        pid, path = window_process_info(hwnd)
-        if not pid or pid != expected_pid or (emulator.get("path") and path.casefold() != emulator["path"].casefold()):
-            return False
-        self._user32.ShowWindow(hwnd, SW_SHOWMINNOACTIVE)
-        return bool(self._user32.IsIconic(hwnd))
+        return minimize_adb_window(self)
 
     def _get_controller_log_message(self):
         if self.is_adb:

@@ -72,7 +72,10 @@ def main():
             for name in ("a", "b"):
                 request = deepcopy(data)
                 request["session_id"] = f"{attempt}-{name}"
-                connection = {"preset": "Probe", "target": {"kind": "Adb", "key": name}}
+                # A real existing-file marker satisfies preflight; the probe
+                # overrides the factory with CustomController and never runs ADB.
+                connection = {"preset": "Probe", "target": {"kind": "Adb", "key": name},
+                              "preferences": {"adb_path": str(Path(__file__).resolve())}}
                 stop, events = context.Event(), context.Queue(512)
                 process = context.Process(target=probe_worker, args=(request, connection, "run", stop, events, lock))
                 process.start()

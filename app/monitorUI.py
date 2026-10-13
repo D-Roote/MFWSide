@@ -571,11 +571,13 @@ class MonitorCoordinator(QObject):
                 resume = result.get("resume")
                 if isinstance(resume, tuple) and len(resume) == 2 and isinstance(resume[1], ConnectionTarget):
                     name, target = resume
-                    if any(p["name"] == name and p["type"] == "Win32" for p in self.service.presets):
+                    if any(p["name"] == name and p["type"] == target.kind for p in self.service.presets):
                         # Save identity only. No second controller until isRunning
                         # becomes false, AFTER both runtime callbacks/cleanup.
                         self.service.targets = [target]
                         self.service._discovered_preset = name
+                        if target.kind == "Adb":
+                            self.service._discovered_adb_path = self.preferences["adb_path"]
                         self._resume_connection = (name, target.key, dict(self.preferences))
                         self._runtime_resume_saved = True
                 image = result["image"]
