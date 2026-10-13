@@ -28,6 +28,7 @@ from app.runtime import AppRuntime, PROGRAM_LAUNCH_ENTRY
 from app.controls import PopupOnlyWheelComboBox
 from app.settingsUI import AssociatedControlLabel, SettingsPanel
 from app.monitorUI import MonitorCoordinator
+from app.extraFeaturesUI import ExtraFeaturesPanel
 from app.afterActions import AfterActionPreferences, WindowsAfterActionBackend, capture_window_target
 from app.afterActionUI import AfterActionPanel
 
@@ -1560,6 +1561,7 @@ class MainWindow(QMainWindow):
 
         setup_settings_icon_button(self.ui.endSettingBtn)
         
+        self._setup_extra_features_ui()
         self._setup_workspace_navigation()
         self._setup_dashboard_layout()
         self._setup_after_action_footer()
@@ -1579,6 +1581,8 @@ class MainWindow(QMainWindow):
         setup_contextual_vertical_scrollbar(self.ui.taskOptionList)
         setup_contextual_vertical_scrollbar(self.ui.logPrintText)
         setup_rounded_vertical_scrollbar(self.ui.scrollSettingWidget)
+        setup_rounded_vertical_scrollbar(self.extra_features_panel.detail_scroll)
+        self.extra_features_panel.feature_page_added.connect(setup_rounded_vertical_scrollbar)
         self.log_action_menu_controller = LogActionMenuController(
             self.ui.logActionMenu,
             self.ui.logMenuToggleButton,
@@ -1767,6 +1771,7 @@ class MainWindow(QMainWindow):
         return {
             "geometry": bytes(self.saveGeometry().toBase64()).decode("ascii"),
             "workspace_sizes": self.ui.workspaceSplitter.sizes(),
+            "extra_navigation_collapsed": self.extra_features_panel.navigation_collapsed,
             "monitor_expanded": {
                 section.property("monitorSectionKey"): bool(section.property("monitorExpanded"))
                 for section in self.ui.monitorSectionsWidget.sections()
@@ -1780,6 +1785,9 @@ class MainWindow(QMainWindow):
             self.ui.workspaceSplitter.setSizes(sizes)
 
     def _restore_ui_state(self):
+        collapsed = self._saved_ui_state.get("extra_navigation_collapsed")
+        if type(collapsed) is bool:
+            self.extra_features_panel.set_navigation_collapsed(collapsed)
         geometry = self._saved_ui_state.get("geometry")
         if isinstance(geometry, str) and 0 < len(geometry) <= 8192:
             try:
@@ -1838,11 +1846,19 @@ class MainWindow(QMainWindow):
                 self.on_main_minimize_setting_changed
             )
 
+    def _setup_extra_features_ui(self):
+        self.extra_features_panel = ExtraFeaturesPanel(self.ui.extraFeaturesTab)
+        layout = QVBoxLayout(self.ui.extraFeaturesTab)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.extra_features_panel)
+        self.extra_features_panel.navigation_collapsed_changed.connect(self._schedule_ui_state_save)
+
     def _setup_workspace_navigation(self):
         self.page_navigation = QButtonGroup(self)
         self.page_navigation.setExclusive(True)
         for button, page in (
             (self.ui.dashboardNavButton, self.ui.mainTab),
+            (self.ui.extraFeaturesNavButton, self.ui.extraFeaturesTab),
             (self.ui.settingsNavButton, self.ui.settingTab),
         ):
             self.page_navigation.addButton(button)
@@ -1854,6 +1870,7 @@ class MainWindow(QMainWindow):
 
     def _sync_page_navigation(self, index):
         self.ui.dashboardNavButton.setChecked(index == self.ui.mainPages.indexOf(self.ui.mainTab))
+        self.ui.extraFeaturesNavButton.setChecked(index == self.ui.mainPages.indexOf(self.ui.extraFeaturesTab))
         self.ui.settingsNavButton.setChecked(index == self.ui.mainPages.indexOf(self.ui.settingTab))
 
     def _setup_dashboard_layout(self):

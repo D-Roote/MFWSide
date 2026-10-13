@@ -2736,6 +2736,7 @@ class UILifecycleTests(unittest.TestCase):
                 self.assertRegex(
                     dark_stylesheet,
                     r"(?s)QWidget#centralwidget,\s*QWidget#mainTab,\s*"
+                    r"QWidget#extraFeaturesTab,\s*"
                     r"QWidget#settingTab\s*\{.*?background-color:\s*#111A2B;",
                 )
                 self.assertRegex(
@@ -2774,6 +2775,7 @@ class UILifecycleTests(unittest.TestCase):
                 self.assertRegex(
                     stylesheet,
                     r"(?s)QWidget#centralwidget,\s*QWidget#mainTab,\s*"
+                    r"QWidget#extraFeaturesTab,\s*"
                     r"QWidget#settingTab\s*\{.*?background-color:\s*#F4F7FB;",
                 )
                 self.assertRegex(

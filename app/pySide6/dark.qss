@@ -35,6 +35,7 @@ QMenu#logContextMenu::separator {
 
 QWidget#centralwidget,
 QWidget#mainTab,
+QWidget#extraFeaturesTab,
 QWidget#settingTab {
     background-color: #111A2B;
 }
@@ -95,18 +96,21 @@ QLabel#monitorStatus {
 }
 
 QPushButton#dashboardNavButton,
+QPushButton#extraFeaturesNavButton,
 QPushButton#settingsNavButton {
     background-color: transparent;
     color: #AEBFD2;
 }
 
 QPushButton#dashboardNavButton:hover,
+QPushButton#extraFeaturesNavButton:hover,
 QPushButton#settingsNavButton:hover {
     background-color: #253751;
     color: #E5EDF6;
 }
 
 QPushButton#dashboardNavButton:checked,
+QPushButton#extraFeaturesNavButton:checked,
 QPushButton#settingsNavButton:checked {
     background-color: #24445F;
     color: #63D2F5;
@@ -382,32 +386,52 @@ QWidget#settingsDetailContents {
     background-color: transparent;
 }
 
-QListWidget#settingsNavigation {
+QListWidget#settingsNavigation,
+QListWidget#extraNavigation {
     background-color: transparent;
     border: none;
 }
 
-QListWidget#settingsNavigation::item {
+QListWidget#settingsNavigation::item,
+QListWidget#extraNavigation::item {
     background-color: transparent;
     color: #AEBFD2;
 }
 
-QListWidget#settingsNavigation::item:hover {
+QListWidget#settingsNavigation::item:hover,
+QListWidget#extraNavigation::item:hover {
     background-color: #22314A;
 }
 
-QListWidget#settingsNavigation::item:selected {
+QListWidget#settingsNavigation::item:selected,
+QListWidget#extraNavigation::item:selected {
     background-color: #243E5C;
     color: #47C2ED;
 }
 
-QScrollArea#settingsDetailScroll {
+QScrollArea#settingsDetailScroll,
+QScrollArea#extraFeatureScroll {
     background-color: transparent;
 }
 
-QFrame#settingsSection {
+QFrame#settingsSection,
+QFrame#extraFeatureCard {
     background-color: #172238;
     border-color: #30415E;
+}
+
+QToolButton#extraNavigationToggle {
+    background-color: #30415E;
+    color: #AEBFD2;
+}
+
+QToolButton#extraNavigationToggle:hover {
+    background-color: #24445F;
+    color: #63D2F5;
+}
+
+QToolButton#extraNavigationToggle:focus {
+    border-color: #63D2F5;
 }
 
 QLabel#settingsSectionTitle {

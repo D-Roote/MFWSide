@@ -69,6 +69,13 @@
        </widget>
       </item>
       <item>
+       <widget class="QPushButton" name="extraFeaturesNavButton">
+        <property name="text"><string>추가 기능</string></property>
+        <property name="accessibleName"><string>추가 기능 탭</string></property>
+        <property name="checkable"><bool>true</bool></property>
+       </widget>
+      </item>
+      <item>
        <widget class="QPushButton" name="settingsNavButton">
         <property name="text"><string>설정</string></property>
         <property name="checkable"><bool>true</bool></property>
@@ -794,6 +801,8 @@
          </widget>
         </item>
        </layout>
+      </widget>
+      <widget class="QWidget" name="extraFeaturesTab">
       </widget>
       <widget class="QWidget" name="settingTab">
       </widget>

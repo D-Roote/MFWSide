@@ -4,7 +4,8 @@ QWidget#settingsDetailContents {
     background-color: transparent;
 }
 
-QListWidget#settingsNavigation {
+QListWidget#settingsNavigation,
+QListWidget#extraNavigation {
     background-color: transparent;
     border: none;
     border-radius: 8px;
@@ -13,7 +14,8 @@ QListWidget#settingsNavigation {
     outline: none;
 }
 
-QListWidget#settingsNavigation::item {
+QListWidget#settingsNavigation::item,
+QListWidget#extraNavigation::item {
     background-color: transparent;
     color: #475569;
     border: none;
@@ -22,25 +24,46 @@ QListWidget#settingsNavigation::item {
     margin-bottom: 4px;
 }
 
-QListWidget#settingsNavigation::item:hover {
+QListWidget#settingsNavigation::item:hover,
+QListWidget#extraNavigation::item:hover {
     background-color: #EDF4FA;
 }
 
-QListWidget#settingsNavigation::item:selected {
+QListWidget#settingsNavigation::item:selected,
+QListWidget#extraNavigation::item:selected {
     background-color: #DDEFF8;
     color: #0284C7;
     font-weight: bold;
 }
 
-QScrollArea#settingsDetailScroll {
+QScrollArea#settingsDetailScroll,
+QScrollArea#extraFeatureScroll {
     background-color: transparent;
     border: none;
 }
 
-QFrame#settingsSection {
+QFrame#settingsSection,
+QFrame#extraFeatureCard {
     background-color: #FFFFFF;
     border: 1px solid #E2E8F0;
     border-radius: 8px;
+}
+
+QToolButton#extraNavigationToggle {
+    background-color: #E2E8F0;
+    color: #64748B;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0px;
+}
+
+QToolButton#extraNavigationToggle:hover {
+    background-color: #DDEFF8;
+    color: #0284C7;
+}
+
+QToolButton#extraNavigationToggle:focus {
+    border-color: #0284C7;
 }
 
 QLabel#settingsSectionTitle {
