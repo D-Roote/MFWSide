@@ -284,14 +284,15 @@ class RuntimeLifecycleTests(unittest.TestCase):
                             call(str((Path(temp) / "overrides").resolve())),
                         ])
 
-    def test_standard_class_regex_only_is_not_supported_by_current_runtime(self):
+    def test_standard_class_regex_only_is_supported_by_current_runtime(self):
         self.runtime.interface["controller"] = [{
             "name": "ClassOnly", "type": "Win32", "win32": {"class_regex": "ExampleWindowClass"},
         }]
         self.runtime.resource_config.pop("controller", None)
-        window, message = self.runtime._find_target_window()
-        self.assertIsNone(window)
-        self.assertIn("window_regex", message)
+        target = SimpleNamespace(hwnd=123, window_name="Any title", class_name="ExampleWindowClass")
+        with patch("app.runtime.Toolkit.find_desktop_windows", return_value=[target]):
+            window, message = self.runtime._find_target_window()
+        self.assertIs(window, target)
 
     def test_omitted_controller_methods_match_runtime_defaults(self):
         self.runtime.interface["controller"] = [
@@ -1478,7 +1479,8 @@ class SettingsStoreTests(unittest.TestCase):
 
         config = self.store.load(self.controller())
 
-        self.assertEqual(config["program"]["executable_name"], "Example.exe")
+        self.assertNotIn("executable_name", config["program"])
+        self.assertNotIn("search_paths", config["program"])
         self.assertEqual(config["program"]["manual_path"], "C:/Games/Example")
         self.assertEqual(config["program"]["startup_wait_seconds"], 12)
         self.assertEqual(config["program"]["poll_interval_seconds"], 0.5)
@@ -1491,7 +1493,7 @@ class ProgramLocatorTests(unittest.TestCase):
         self.addCleanup(temp_dir.cleanup)
         self.root = Path(temp_dir.name)
 
-    def test_auto_search_checks_each_configured_drive_relative_path(self):
+    def test_auto_search_does_not_scan_legacy_game_paths_without_controller(self):
         executable = (
             self.root
             / "SteamLibrary"
@@ -1507,7 +1509,7 @@ class ProgramLocatorTests(unittest.TestCase):
             DEFAULT_PROGRAM_CONFIG, drive_roots=[self.root]
         )
 
-        self.assertEqual(detected, executable.resolve())
+        self.assertIsNone(detected)
 
     def test_manual_directory_has_priority_and_requires_target_executable(self):
         manual_directory = self.root / "CustomBlueArchive"
@@ -1520,7 +1522,7 @@ class ProgramLocatorTests(unittest.TestCase):
 
         self.assertEqual(
             resolve_manual_program_path(
-                str(manual_directory), config["executable_name"]
+                str(manual_directory)
             ),
             executable.resolve(),
         )
@@ -1529,7 +1531,7 @@ class ProgramLocatorTests(unittest.TestCase):
         )
         self.assertIsNone(
             resolve_manual_program_path(
-                str(manual_directory / "Other.exe"), config["executable_name"]
+                str(manual_directory / "Other.exe")
             )
         )
 

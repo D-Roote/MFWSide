@@ -2,18 +2,10 @@ from copy import deepcopy
 import ctypes
 from pathlib import Path
 import re
-import string
 
 
 DEFAULT_PROGRAM_CONFIG = {
-    "executable_name": "BlueArchive.exe",
     "manual_path": "",
-    "search_paths": [
-        "Program Files (x86)/Steam/steamapps/common/BlueArchive/BlueArchive.exe",
-        "SteamLibrary/steamapps/common/BlueArchive/BlueArchive.exe",
-        # 요청에 명시된 철자도 기존 사용자 설치 경로 호환을 위해 함께 탐색한다.
-        "SteamLibary/steamapps/common/BlueArchive/BlueArchive.exe",
-    ],
     "startup_wait_seconds": 60,
     "recognition_timeout_seconds": 180,
     "poll_interval_seconds": 1.0,
@@ -25,21 +17,9 @@ def normalize_program_config(raw_config):
     if not isinstance(raw_config, dict):
         return config
 
-    executable_name = raw_config.get("executable_name")
-    if isinstance(executable_name, str) and executable_name.strip():
-        config["executable_name"] = executable_name.strip()
-
     manual_path = raw_config.get("manual_path")
     if isinstance(manual_path, str):
         config["manual_path"] = manual_path.strip()
-
-    search_paths = raw_config.get("search_paths")
-    if (
-        isinstance(search_paths, list)
-        and search_paths
-        and all(isinstance(path, str) and path.strip() for path in search_paths)
-    ):
-        config["search_paths"] = [path.strip() for path in search_paths]
 
     for key in ("startup_wait_seconds", "recognition_timeout_seconds"):
         value = raw_config.get(key)
@@ -56,28 +36,26 @@ def normalize_program_config(raw_config):
     return config
 
 
-def windows_drive_roots():
-    if not hasattr(ctypes, "windll"):
-        return []
-    mask = ctypes.windll.kernel32.GetLogicalDrives()
-    return [
-        Path(f"{letter}:\\")
-        for index, letter in enumerate(string.ascii_uppercase)
-        if mask & (1 << index)
-    ]
-
-
-def resolve_manual_program_path(manual_path, executable_name):
+def resolve_manual_program_path(manual_path, executable_name=None):
+    """An explicit executable, or an unambiguous legacy folder; never an auto fallback."""
     if not isinstance(manual_path, str) or not manual_path.strip():
         return None
-    candidate = Path(manual_path.strip()).expanduser()
-    if candidate.is_dir():
-        candidate = candidate / executable_name
-    if not candidate.is_file():
+    if any(character in manual_path for character in ("\0", "\r", "\n")):
         return None
-    if candidate.name.casefold() != executable_name.casefold():
+    try:
+        candidate = Path(manual_path.strip()).expanduser()
+        if candidate.is_dir():
+            executables = [path for path in candidate.iterdir()
+                           if path.is_file() and path.suffix.casefold() == ".exe"]
+            return executables[0].resolve() if len(executables) == 1 else None
+        if candidate.is_file() and candidate.suffix.casefold() == ".exe":
+            return candidate.resolve()  # Preserve previously saved unquoted file paths.
+    except (OSError, ValueError):
+        pass  # A command with arguments is not necessarily a valid filesystem path.
+    try:
+        return parse_manual_program_command(manual_path)[0]
+    except (OSError, ValueError):
         return None
-    return candidate.resolve()
 
 
 def parse_manual_program_command(command):
@@ -117,38 +95,213 @@ def parse_manual_program_command(command):
     return executable.resolve(), values[1:]
 
 
+def _controller_patterns(controller):
+    if not isinstance(controller, dict) or controller.get("type") != "Win32":
+        return None
+    win32 = controller.get("win32") or {}
+    if not isinstance(win32, dict):
+        return None
+    title, class_name = win32.get("window_regex", ""), win32.get("class_regex", "")
+    if not isinstance(title, str) or not isinstance(class_name, str) or not (title or class_name):
+        return None
+    try:
+        return re.compile(title, re.IGNORECASE), re.compile(class_name, re.IGNORECASE)
+    except re.error:
+        return None
+
+
+def registered_steam_roots():
+    """Read Steam's registration, not guesses about game folders or drive letters."""
+    import winreg
+    roots = set()
+    for hive, key_name, value_name in (
+        (winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam", "SteamPath"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Valve\Steam", "InstallPath"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath"),
+    ):
+        try:
+            with winreg.OpenKey(hive, key_name) as key:
+                value, _ = winreg.QueryValueEx(key, value_name)
+            if (isinstance(value, str) and value and Path(value).is_absolute()
+                    and (Path(value) / "steam.exe").is_file()):
+                roots.add(Path(value).resolve())
+        except (OSError, ValueError):
+            pass
+    return sorted(roots)
+
+
+def _read_keyvalues(path):
+    """Parse quoted/bare KeyValues tokens, nested blocks, escapes and line comments."""
+    try:
+        source = Path(path).read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError):
+        return {}
+    tokens, index = [], 0
+    while index < len(source):
+        if source[index].isspace():
+            index += 1
+        elif source.startswith("//", index):
+            end = source.find("\n", index)
+            index = len(source) if end < 0 else end + 1
+        elif source[index] in "{}":
+            tokens.append((source[index], True))
+            index += 1
+        elif source[index] == '"':
+            index += 1
+            value = []
+            while index < len(source) and source[index] != '"':
+                if source[index] == "\\" and index + 1 < len(source) and source[index + 1] in ('"', "\\"):
+                    index += 1
+                value.append(source[index])
+                index += 1
+            if index == len(source):
+                return {}
+            tokens.append(("".join(value), False))
+            index += 1
+        else:
+            end = index + 1
+            while end < len(source) and not source[end].isspace() and source[end] not in '{}"':
+                end += 1
+            tokens.append((source[index:end], False))
+            index = end
+    position = 0
+
+    def block(nested=False, depth=0):
+        nonlocal position
+        if depth > 32:
+            raise ValueError("KeyValues nesting too deep")
+        result = {}
+        while position < len(tokens):
+            key, structural = tokens[position]
+            position += 1
+            if structural:
+                if key == "}" and nested:
+                    return result
+                raise ValueError("Unexpected brace")
+            if position == len(tokens):
+                raise ValueError("Missing value")
+            value, structural = tokens[position]
+            position += 1
+            if structural:
+                if value != "{":
+                    raise ValueError("Missing value")
+                value = block(True, depth + 1)
+            result[key.casefold()] = value
+        if nested:
+            raise ValueError("Unclosed block")
+        return result
+    try:
+        return block()
+    except (ValueError, RecursionError):
+        return {}
+
+
+def steam_installations(steam_roots=None):
+    installations = {}
+    for root in registered_steam_roots() if steam_roots is None else steam_roots:
+        try:
+            root = Path(root).resolve()
+            launcher = root / "steam.exe"
+            available = launcher.is_file()
+        except (OSError, ValueError):
+            continue
+        if not available:
+            continue
+        libraries = {root}
+        folders = _read_keyvalues(root / "steamapps/libraryfolders.vdf").get("libraryfolders", {})
+        if isinstance(folders, dict):
+            for key, value in folders.items():
+                if key.isdecimal():
+                    path = value.get("path") if isinstance(value, dict) else value
+                    if isinstance(path, str) and path and Path(path).is_absolute():
+                        try:
+                            libraries.add(Path(path).resolve())
+                        except (OSError, ValueError):
+                            continue
+        for library in sorted(libraries):
+            steamapps = library / "steamapps"
+            for manifest in sorted(steamapps.glob("appmanifest_*.acf")):
+                state = _read_keyvalues(manifest).get("appstate", {})
+                if not isinstance(state, dict):
+                    continue
+                app_id, name, directory = state.get("appid"), state.get("name"), state.get("installdir")
+                if (not isinstance(app_id, str) or not app_id.isascii() or not app_id.isdecimal() or int(app_id) <= 0
+                        or manifest.stem != f"appmanifest_{app_id}" or not isinstance(name, str)
+                        or not isinstance(directory, str) or not directory):
+                    continue
+                try:
+                    common = (steamapps / "common").resolve()
+                    installed = (common / directory).resolve()
+                    available = installed.is_relative_to(common) and installed != common and installed.is_dir()
+                except (OSError, ValueError):
+                    continue
+                if not available:
+                    continue
+                installations[(app_id, str(installed).casefold())] = {
+                    "app_id": app_id, "name": name, "directory": installed, "launcher": launcher,
+                }
+    return list(installations.values())
+
+
+def _literal_window_title(pattern):
+    """Do not treat arbitrary regexes, class names, or project labels as Steam IDs."""
+    text = pattern.removeprefix("^").removesuffix("$")
+    result, index = [], 0
+    while index < len(text):
+        character = text[index]
+        if character == "\\":
+            index += 1
+            if index == len(text) or text[index].isalnum():
+                return None
+            result.append(text[index])
+        elif character in ".*+?[](){}|^$":
+            return None
+        else:
+            result.append(character)
+        index += 1
+    title = "".join(result)
+    return title if title.strip() else None
+
+
 def find_auto_program_executable(program_config, drive_roots=None):
-    config = normalize_program_config(program_config)
-    roots = windows_drive_roots() if drive_roots is None else list(drive_roots)
-    for root in roots:
-        for relative_path in config["search_paths"]:
-            candidate = Path(root) / Path(relative_path)
-            if candidate.is_file() and candidate.name.casefold() == config[
-                "executable_name"
-            ].casefold():
-                return candidate.resolve()
-    return None
+    """Return a verified running EXE or a unique Steam install root (no EXE guessing)."""
+    controller = (program_config or {}).get("controller")
+    patterns = _controller_patterns(controller)
+    if patterns is None:
+        return None
+    from maa.toolkit import Toolkit
+    from app.monitoring import window_process_info
+    title, class_name = patterns
+    try:
+        matches = [window for window in (Toolkit.find_desktop_windows() or [])
+                   if title.search(window.window_name or "") and class_name.search(window.class_name or "")]
+        paths = set()
+        for window in matches:
+            hwnd = getattr(window.hwnd, "value", window.hwnd)
+            pid, path = window_process_info(hwnd)
+            if not pid or not path or not Path(path).is_file() or Path(path).suffix.casefold() != ".exe":
+                return None  # Do not substitute another installation on a permissions failure.
+            paths.add(Path(path).resolve())
+        if matches:
+            return next(iter(paths)) if len(paths) == 1 else None
+    except (OSError, RuntimeError):
+        return None
+    literal_title = _literal_window_title(controller["win32"].get("window_regex", ""))
+    if not literal_title:
+        return None
+    candidates = [installation["directory"] for installation in steam_installations(drive_roots)
+                  if installation["name"].casefold() == literal_title.casefold()]
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def find_program_executable(program_config, drive_roots=None):
     config = normalize_program_config(program_config)
     manual = resolve_manual_program_path(
-        config["manual_path"], config["executable_name"]
+        config["manual_path"]
     )
-    if manual is not None:
+    if config["manual_path"]:
         return manual
-    return find_auto_program_executable(config, drive_roots)
-
-
-def _read_steam_manifest_value(manifest_text, key):
-    match = re.search(
-        rf'^\s*"{re.escape(key)}"\s+"([^"]*)"',
-        manifest_text,
-        flags=re.IGNORECASE | re.MULTILINE,
-    )
-    if match is None:
-        return None
-    return match.group(1).replace("\\\\", "\\")
+    return find_auto_program_executable(program_config, drive_roots)
 
 
 def find_steam_launch(executable_path):
@@ -168,33 +321,45 @@ def find_steam_launch(executable_path):
     except ValueError:
         return None
 
+    candidates = []
     for manifest_path in sorted(steamapps_dir.glob("appmanifest_*.acf")):
+        state = _read_keyvalues(manifest_path).get("appstate", {})
+        if not isinstance(state, dict):
+            continue
+        app_id, install_dir = state.get("appid"), state.get("installdir")
+        if (not isinstance(app_id, str) or not app_id.isascii() or not app_id.isdecimal() or int(app_id) <= 0
+                or manifest_path.stem != f"appmanifest_{app_id}" or not isinstance(install_dir, str)):
+            continue
         try:
-            manifest_text = manifest_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+            installed_root = (common_dir / install_dir).resolve()
+        except (OSError, ValueError):
             continue
-
-        app_id = _read_steam_manifest_value(manifest_text, "appid")
-        install_dir = _read_steam_manifest_value(manifest_text, "installdir")
-        launcher_path = _read_steam_manifest_value(manifest_text, "LauncherPath")
-        if not app_id or not app_id.isdecimal() or not install_dir or not launcher_path:
+        if not installed_root.is_relative_to(common_dir.resolve()) or installed_root == common_dir.resolve():
             continue
-
-        installed_root = (common_dir / install_dir).resolve()
         try:
             executable.relative_to(installed_root)
         except ValueError:
             continue
 
-        launcher = Path(launcher_path).resolve()
-        if not launcher.is_file():
+        launchers = []
+        registered_launcher = steamapps_dir.parent / "steam.exe"
+        if registered_launcher.is_file():
+            launchers.append(registered_launcher)
+        launchers.extend(root / "steam.exe" for root in registered_steam_roots())
+        launcher_path = state.get("launcherpath")
+        if isinstance(launcher_path, str) and Path(launcher_path).name.casefold() == "steam.exe":
+            launchers.append(Path(launcher_path))
+        launcher = next((path.resolve() for path in launchers if path.is_file()), None)
+        if launcher is None:
             continue
-        return launcher, f"steam://run/{app_id}"
-    return None
+        candidates.append((launcher, f"steam://run/{app_id}"))
+    return candidates[0] if len(candidates) == 1 else None
 
 
-def build_program_launch_command(executable_path):
+def build_program_launch_command(executable_path, arguments=None):
     executable = Path(executable_path).resolve()
+    if arguments:
+        return [str(executable), *arguments], executable.parent
     steam_launch = find_steam_launch(executable)
     if steam_launch is not None:
         launcher, app_url = steam_launch

@@ -49,7 +49,9 @@ class MonitoringServiceTests(unittest.TestCase):
         targets = self.service.discover("Window", program_settings={"executable_name": "Game.exe"})
         self.assertEqual([target.key for target in targets], ["10"])
         self.assertIn("PID 123", targets[0].label)
-        self.assertEqual(self.service.discover("Window", program_settings={"executable_name": "Wrong.exe"}), [])
+        # Legacy game-name defaults no longer filter a valid interface window.
+        self.assertEqual([target.key for target in self.service.discover(
+            "Window", program_settings={"executable_name": "Wrong.exe"})], ["10"])
 
     def test_invalid_regex_is_rejected_before_native_discovery(self):
         self.service.presets[0]["win32"]["window_regex"] = "["

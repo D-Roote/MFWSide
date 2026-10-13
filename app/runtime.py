@@ -697,13 +697,15 @@ class AppRuntime:
             return None, str(error)
 
         window_keyword = self._get_window_keyword()
-        if not window_keyword:
-            return None, "Win32 window_regex 설정이 비어 있습니다."
+        class_keyword = self.controller_config.get("win32", {}).get("class_regex", "")
+        if not window_keyword and not class_keyword:
+            return None, "Win32 window_regex 또는 class_regex 설정이 비어 있습니다."
 
         try:
             window_pattern = re.compile(window_keyword, re.IGNORECASE)
+            class_pattern = re.compile(class_keyword, re.IGNORECASE)
         except re.error as error:
-            return None, f"Win32 window_regex가 올바르지 않습니다: {error}"
+            return None, f"Win32 window_regex/class_regex가 올바르지 않습니다: {error}"
 
         deadline = time.monotonic() + max(0, wait_timeout_seconds)
         stable_signature = None
@@ -718,6 +720,7 @@ class AppRuntime:
                 window
                 for window in windows
                 if window_pattern.search(window.window_name or "")
+                and class_pattern.search(getattr(window, "class_name", "") or "")
             ]
             if candidates:
                 candidate = candidates[0]
@@ -835,19 +838,25 @@ class AppRuntime:
         if not isinstance(resolved_path, str) or not resolved_path.strip():
             return False, "실행할 프로그램 경로가 확인되지 않았습니다."
         executable_path = Path(resolved_path).resolve()
-        if not executable_path.is_file():
-            return False, f"실행 파일을 찾을 수 없습니다: {executable_path}"
-
-        if self._program_is_running(executable_path.name):
-            return True, "대상 프로그램이 이미 실행 중입니다."
-
         try:
             launch_command, working_directory = build_program_launch_command(
-                executable_path
+                executable_path, program_settings.get("launch_arguments")
             )
+            if executable_path.is_dir():
+                if len(launch_command) != 2 or not launch_command[1].startswith("steam://run/"):
+                    return False, "Steam 설치 정보를 확인할 수 없습니다. 수동 EXE 경로를 지정하세요."
+                # The running Steam client is not the running game.
+                window, _ = self._find_target_window(self.controller_config)
+                if window is not None:
+                    return True, "대상 프로그램 창이 이미 실행 중입니다."
+            elif not executable_path.is_file():
+                return False, f"실행 파일을 찾을 수 없습니다: {executable_path}"
+            elif self._program_is_running(executable_path.name):
+                return True, "대상 프로그램이 이미 실행 중입니다."
             subprocess.Popen(
                 launch_command,
                 cwd=str(working_directory),
+                shell=False,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

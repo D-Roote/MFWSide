@@ -173,12 +173,9 @@ class MonitoringService:
                     continue
                 pid, path = window_process_info(hwnd)
                 program = program_settings if isinstance(program_settings, dict) else {}
-                expected = program.get("executable_name", "")
                 manual_path = program.get("manual_path", "")
-                if path and expected and Path(path).name.casefold() != expected.casefold():
-                    continue
                 if path and manual_path:
-                    resolved = resolve_manual_program_path(manual_path, expected)
+                    resolved = resolve_manual_program_path(manual_path)
                     if resolved is None or Path(path).resolve() != resolved:
                         continue
                 detail = Path(path).name if path else "실행 파일 확인 권한 제한"

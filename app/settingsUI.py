@@ -33,7 +33,7 @@ from app.pg_init import (
     resolve_manual_program_path,
 )
 
-WIN32_MANUAL_PATH_DESCRIPTION = "비워 두면 자동 검색 결과를 사용합니다. 폴더 또는 실행 파일을 지정할 수 있습니다."
+WIN32_MANUAL_PATH_DESCRIPTION = '자동 인식이 불가능하면 실행 파일을 지정하세요. "실행 파일 경로.exe" 인수 형식을 사용할 수 있습니다.'
 ADB_MANUAL_PATH_DESCRIPTION = (
     '실행 디바이스의 바로가기 생성 후, 우클릭-속성-바로 가기 탭 의 "대상"을 복사하여 사용합니다.'
 )
@@ -661,19 +661,12 @@ class SettingsPanel(QWidget):
         self._save()
 
     def _browse_program_path(self):
-        if self.controller_settings().get("type") == "Adb":
-            selected, _ = QFileDialog.getOpenFileName(self, "앱플레이어 실행 파일 선택", "", "실행 파일 (*.exe)")
-            if selected:
-                self.program_path_input.setText(f'"{selected}"')
-            return
-        initial_path = self.program_path_input.text().strip()
-        selected = QFileDialog.getExistingDirectory(
-            self,
-            "프로그램 설치 폴더 선택",
-            initial_path if Path(initial_path).is_dir() else "",
+        adb = self.controller_settings().get("type") == "Adb"
+        selected, _ = QFileDialog.getOpenFileName(
+            self, "앱플레이어 실행 파일 선택" if adb else "프로그램 실행 파일 선택", "", "실행 파일 (*.exe)"
         )
         if selected:
-            self.program_path_input.setText(selected)
+            self.program_path_input.setText(f'"{selected}"')
 
     def _apply_program_path(self):
         if self._confirmed_manual_path or self._manual_path_error_active:
@@ -686,15 +679,14 @@ class SettingsPanel(QWidget):
             return
 
         manual_path = self.program_path_input.text().strip()
-        config = normalize_program_config(self.config.get("program"))
         error = None
         if self.controller_settings().get("type") == "Adb":
             try:
                 parse_manual_program_command(manual_path)
             except (OSError, ValueError) as exception:
                 error = str(exception)
-        elif manual_path and resolve_manual_program_path(manual_path, config["executable_name"]) is None:
-            error = f"{config['executable_name']} 파일을 확인할 수 없습니다."
+        elif manual_path and resolve_manual_program_path(manual_path) is None:
+            error = "실행 파일을 확인할 수 없습니다. EXE 경로와 인수를 확인하세요."
         if error:
             self._manual_path_error_active = True
             self.program_apply_button.setText("초기화")
@@ -704,6 +696,7 @@ class SettingsPanel(QWidget):
                 False,
             )
             self._set_program_active_status_visible(True, animate=True)
+            self.program_changed.emit(self.program_settings())
             return
 
         self._confirmed_manual_path = manual_path
@@ -777,6 +770,7 @@ class SettingsPanel(QWidget):
         config = {
             **normalize_program_config(self.config.get("program")),
             "manual_path": self._confirmed_manual_path,
+            "controller": self.controller_settings(),
         }
         has_manual_path = bool(self._confirmed_manual_path)
         show_active_status = has_manual_path or self._manual_path_error_active
@@ -786,21 +780,22 @@ class SettingsPanel(QWidget):
         adb = self.controller_settings().get("type") == "Adb"
         self.program_path_row.description_label.setText(ADB_MANUAL_PATH_DESCRIPTION if adb else WIN32_MANUAL_PATH_DESCRIPTION)
         self._update_program_description_height()
-        self.program_path_input.setPlaceholderText('"앱플레이어 실행 파일.exe" 실행 속성' if adb else "실행 파일 또는 실행 파일이 있는 폴더 경로")
+        self.program_path_input.setPlaceholderText('"앱플레이어 실행 파일.exe" 실행 속성' if adb else '"실행 파일 경로.exe" 인수')
         self.program_auto_status.setEnabled(not adb)
         auto_path = None if adb else find_auto_program_executable(config)
+        self._auto_program_path = auto_path
         if adb:
             self._set_status_label(self.program_auto_status, "자동 경로를 사용할 수 없습니다.", None)
         elif auto_path is None:
             self._set_status_label(
                 self.program_auto_status,
-                "자동 검색: 설치 위치를 찾지 못했습니다.",
+                "자동 검색: 대상을 확정하지 못했습니다. 수동 경로를 지정하세요.",
                 False,
             )
         else:
             self._set_status_label(
                 self.program_auto_status,
-                f"자동 검색: {auto_path}",
+                f"자동 검색: {auto_path}" + (" (Steam 설치 폴더)" if auto_path.is_dir() else ""),
                 True,
             )
 
@@ -812,7 +807,7 @@ class SettingsPanel(QWidget):
             self._set_program_active_status_visible(False, animate)
             return
 
-        active_path = self.program_settings().get("resolved_path") if adb else find_program_executable(config)
+        active_path = self.program_settings().get("resolved_path")
         if not active_path:
             self._set_status_label(
                 self.program_active_status,
@@ -894,6 +889,7 @@ class SettingsPanel(QWidget):
         config = {
             **normalize_program_config(self.config.get("program")),
             "manual_path": self._confirmed_manual_path,
+            "controller": self.controller_settings(),
         }
         adb = self.controller_settings().get("type") == "Adb"
         config["manual_only"] = adb
@@ -906,6 +902,21 @@ class SettingsPanel(QWidget):
                 resolved_path = None
                 config["launch_arguments"] = []
         else:
-            resolved_path = find_program_executable(config)
+            if self._confirmed_manual_path:
+                resolved_path = find_program_executable(config)
+            else:
+                # Discovery runs on status/controller refresh, not every snapshot/FPS/log event.
+                resolved_path = getattr(self, "_auto_program_path", None)
+                if resolved_path and not (resolved_path.is_file() or resolved_path.is_dir()):
+                    resolved_path = None
+            config["launch_arguments"] = []
+            if self._confirmed_manual_path and resolved_path:
+                try:
+                    _, config["launch_arguments"] = parse_manual_program_command(self._confirmed_manual_path)
+                except (OSError, ValueError):
+                    pass  # Existing unquoted EXE paths and single-EXE folders have no arguments.
+        if self._manual_path_error_active:
+            resolved_path = None
+            config["launch_arguments"] = []
         config["resolved_path"] = str(resolved_path) if resolved_path else ""
         return config

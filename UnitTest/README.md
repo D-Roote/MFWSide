@@ -46,6 +46,8 @@ SDK 연결 전 원본 상태 저장·크기 조절, 비활성 일반 창 표시,
 
 ## 기본 인터페이스와 ADB 자동 실행
 
+`test_generic_program_discovery.py`는 게임별 EXE/경로 기본값 제거, 공식 창 제목·클래스 조건의 실행 중 EXE 조회, Steam 등록 위치/신·구 libraryfolders/manifest 조회와 모호성·경로 탈출 차단, 일반 EXE·인수와 기존 단일 EXE 폴더 호환, 잘못된 수동 경로의 자동 대체 금지, Steam 클라이언트와 게임 실행 구분 및 UI 검색 결과 재사용을 검증한다. Steam/게임 실행은 Popen 모의로 차단한다.
+
 `test_interface_startup.py`는 interface 누락 시 Win32 UI/리소스·작업 차단, ADB-only 선언, 잘못된 최상위 JSON을 확인한다. `test_adb_program_settings.py`는 Windows 바로가기 대상의 인수·공백·백슬래시·따옴표 파싱, 빈/잘못된/삭제된 경로에서 자동 검색 차단, 타입 복원 순서/저장, 긴 설명문 전체 표시 및 작은 창/양 테마의 가로 넘침을 검증한다.
 
 `test_adb_startup.py`는 모의 프로세스와 가상 시계로 유효 PID/60초 대기/인수/쉘 미사용, 시작 전·대기 중 취소, 비정상 종료/경로·주소 미확인, 런처 위임, 같은 PID·경로 또는 명시 창만 최소화/재최소화·크기 조절·복원 없음, 메인 ADB 연결·Tasker 순서와 실패 차단, 모니터 재연결용 기기 메타데이터를 검증한다. 테스트용 EXE 파일은 빈 파일이며 Popen과 ADB 입력은 전부 모의한다.
