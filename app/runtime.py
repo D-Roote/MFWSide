@@ -18,6 +18,7 @@ from maa.tasker import Tasker
 from maa.toolkit import Toolkit
 
 from app.paths import PATHS
+from app.agentRuntime import AgentSession, normalize_agents
 from app.pg_init import build_program_launch_command
 from app.adbStartup import (
     adb_controller_options, adb_target_descriptor, launch_adb_program,
@@ -184,6 +185,7 @@ class AppRuntime:
         self._controller_activity = ControllerActivitySink()
         self._toolkit_initialized = False
         self._resource_loaded = False
+        self._agent_session = None
         self._task_post_lock = threading.Lock()
         self._preview_capture_idle = threading.Event()
         self._preview_capture_idle.set()
@@ -1024,6 +1026,18 @@ class AppRuntime:
             bound, bind_message = self._bind_tasker()
             if not bound:
                 return False, bind_message
+            if pipeline_task_requested or execution_queue is None:
+                specs = normalize_agents(self.interface.get("agent"))
+                if specs:
+                    # Keep the manager before start so partial failures are
+                    # cleaned up with the same Resource/Controller/Tasker.
+                    self._agent_session = AgentSession(
+                        specs, self.interface_path, self.user_dir, self.interface,
+                        self.controller_config, self.resource_config, self.log_sink._emit,
+                    )
+                    self._agent_session.start(
+                        self.resource, self.controller, self.tasker, cancellation_requested,
+                    )
             initialized = True
         except (KeyError, TypeError, ValueError, RuntimeError, OSError) as error:
             return False, f"Runtime 초기화 중 오류가 발생했습니다: {error}"
@@ -1085,6 +1099,8 @@ class AppRuntime:
                 minimize_error += f" 작업 중지 요청에 실패했습니다: {error}"
 
         try:
+            if self._agent_session is not None:
+                self._agent_session.ensure_running()
             if not self._window_size_prepared and not self._resize_window_for_task(1280, 720):
                 return False, "대상 창의 내부 영역을 1280x720으로 조정하지 못했습니다."
 
@@ -1130,6 +1146,8 @@ class AppRuntime:
             failed_labels = []
             for entry, job in jobs:
                 job.wait()
+                if self._agent_session is not None:
+                    self._agent_session.ensure_running()
                 if not job.succeeded:
                     failed_labels.append(self._get_task_label(entry))
 
@@ -1264,6 +1282,14 @@ class AppRuntime:
                             return False, message
                     except Exception as error:
                         return False, f"컨트롤러 비활성화에 실패했습니다: {error}"
+                if self._agent_session is not None:
+                    # Agent owns SDK callback pointers (and strong Python
+                    # bindings). Disconnect after all native work is idle,
+                    # before destroying their owners or restoring the window.
+                    self._agent_session.close()
+                    self._agent_session = None
+                    self.resource = None
+                    self._resource_loaded = False
                 if self.controller is not None and self._controller_sink_id is not None:
                     self.controller.remove_sink(self._controller_sink_id)
                 self._controller_sink_id = None

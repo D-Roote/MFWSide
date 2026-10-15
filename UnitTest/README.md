@@ -46,7 +46,9 @@ SDK 연결 전 원본 상태 저장·크기 조절, 비활성 일반 창 표시,
 
 표준 PI v2 기본 Win32 구성도 파일로 읽어 검증합니다. `window_regex`, 상대 리소스 경로 목록, 임의의 `task.entry`로 실행하며, `PrintWindow`/`FramePool`과 최소화 설정을 조합합니다. 내장 게임 실행 작업, Agent, 별도 `program` 설정, Pipeline의 `focus`는 최소화 기능의 필수 조건이 아닙니다.
 
-현재 런타임은 PI 전체를 구현한 범용 클라이언트는 아닙니다. Win32 `window_regex`가 필요하며 첫 번째 리소스를 사용합니다. `class_regex`만을 사용하는 검색, `import`, `attach_resource_path`, Agent/pretask 선언 등의 처리를 보장하지 않습니다. 기본 구성 테스트 통과를 PI 전체 호환 또는 다른 게임의 실제 최소화·캡처 성공으로 해석하지 않습니다.
+현재 런타임은 PI 전체를 구현한 범용 클라이언트는 아닙니다. Win32 `window_regex`가 필요하며 첫 번째 리소스를 사용합니다. `class_regex`만을 사용하는 검색, `import`, `attach_resource_path`, pretask 선언 등의 처리를 보장하지 않습니다. 표준 `agent` 선언은 아래 별도 테스트 범위로 지원합니다. 기본 구성 테스트 통과를 PI 전체 호환 또는 다른 게임의 실제 최소화·캡처 성공으로 해석하지 않습니다.
+
+`test_agent_runtime.py`는 PI의 단일/복수 Agent 선언 검증, interface 기준 실행 경로·CWD·마지막 식별자 인수, 소스/빌드 환경의 Python 구분, 실제 선택 PI 환경 변수와 고정 식별자 잠금, 연결·이벤트 연결·실패·취소·자식 종료·정리 재시도·Resource 재생성 및 기본/다중 세션 격리를 검증합니다. SDK AgentClient와 Popen은 전부 모의합니다. 잠금만 임시 파일에 실제 적용하며 게임·ADB·사용자 Agent는 실행하지 않습니다. 실제 Agent IPC 왕복, 프로젝트별 커스텀 코드, frozen 패키징은 별도 실기 검증 대상입니다.
 
 스펙 기준: [MaaFramework 5.12.3 Project Interface V2](https://github.com/MaaXYZ/MaaFramework/blob/v5.12.3/docs/en_us/3.3-ProjectInterfaceV2.md).
 
