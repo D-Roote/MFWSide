@@ -385,7 +385,10 @@ class MultiExecutionPanel(QWidget):
                 break
 
     def discover(self, session_id=None):
-        if self.discovery_worker is not None or self.window.isRunning or self.closing:
+        if self.discovery_worker is not None or self.window.isRunning or self.closing or self.window._completion_pending:
+            return
+        if session_id is None and self.manager.active:
+            self.report_status("인스턴스 실행 또는 연결 확인이 끝난 뒤 자동 인식을 다시 시도하세요.")
             return
         snapshot = self.window.multi_execution_snapshot(include_tasks=False)
         card = self.cards.get(session_id)
@@ -431,6 +434,12 @@ class MultiExecutionPanel(QWidget):
             else:
                 card._configure()
         else:
+            if self.manager.active or self.window.isRunning or self.window._completion_pending:
+                self.report_status("작업이 시작되어 자동 인식 결과를 적용하지 않았습니다. 작업 종료 후 다시 시도하세요.")
+                self.refresh()
+                return
+            # Global discovery replaces the idle list; per-card discovery stays local.
+            self._delete_all()
             ids = [session_id for connection in found if (session_id := self.manager.add(connection)) is not None]
             for instance_id in ids:
                 card = self.cards[instance_id]
@@ -450,7 +459,7 @@ class MultiExecutionPanel(QWidget):
         self.start_all.setEnabled(not busy and bool(self.manager.sessions))
         self.stop_all.setEnabled(self.manager.active)
         self.add_button.setEnabled(not busy)
-        self.auto_button.setEnabled(not busy)
+        self.auto_button.setEnabled(not busy and not self.manager.active)
         self.delete_all.setEnabled(bool(self.manager.sessions))
         for card in self.cards.values():
             card.refresh()
