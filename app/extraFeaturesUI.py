@@ -55,8 +55,7 @@ class ExtraFeaturesPanel(QWidget):
         title.setObjectName("settingsSectionTitle")
         card_layout.addWidget(title)
         description = QLabel(
-            "아직 등록된 추가 기능이 없습니다.\n"
-            "기능이 추가되면 왼쪽 목록에서 선택할 수 있습니다.", card)
+            "추가 기능에 대한 건의는 GitHub Issue로 남겨주세요.", card)
         description.setObjectName("settingsSectionDescription")
         description.setWordWrap(True)
         card_layout.addWidget(description)

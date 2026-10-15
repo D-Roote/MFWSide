@@ -620,7 +620,12 @@ class MonitorCoordinator(QObject):
             elif kind == "discover":
                 self.targets = result
                 self.target_key = result[0].key if result else ""
-                self.status = f"대상 {len(result)}개 발견. 연결 확인을 눌러주세요." if result else "대상이 없습니다. 프로그램 실행/ADB 연결 상태를 확인하세요."
+                if result:
+                    self.status = f"대상 {len(result)}개 발견. 연결 확인을 눌러주세요."
+                elif self.service.preset(self.preset_name)["type"] == "Adb":
+                    self.status = "대상이 없습니다. ADB 연결 상태를 확인하세요."
+                else:
+                    self.status = "대상이 없습니다. 프로그램 실행 상태를 확인하세요."
             elif kind == "connect":
                 self.status = f"연결 성공 · {result.label}"
             elif kind == "disconnect":

@@ -107,7 +107,7 @@ class ExtraFeaturesUITests(unittest.TestCase):
         self.assertEqual(self.panel.navigation.item(0).text(), "다중 실행")
         self.assertEqual(self.panel.navigation.item(1).text(), "안내")
         label = self.panel.findChild(QLabel, "settingsSectionDescription")
-        self.assertIn("아직 등록된 추가 기능이 없습니다.", label.text())
+        self.assertEqual("추가 기능에 대한 건의는 GitHub Issue로 남겨주세요.", label.text())
         self.assertIs(self.ui.mainPages.currentWidget(), self.ui.mainTab)
 
     def test_light_dark_surfaces_and_minimum_width_fit_after_collapse(self):
