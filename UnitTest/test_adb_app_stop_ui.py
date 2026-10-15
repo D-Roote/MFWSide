@@ -159,6 +159,37 @@ class GenericAdbCompletionUITests(unittest.TestCase):
             worker.assert_not_called()
         self.assertIn("실행 기기와 종료 대상이 다릅니다", self.window.ui.logPrintText.toPlainText())
 
+    def test_multi_group_shutdown_waits_for_adb_apps_and_avoids_process_exit_helper(self):
+        other = AdbAppStopTarget("fake-adb.exe", "192.0.2.10:5555", self.target.boot_id, "0")
+        results = [{"succeeded": True, "connection": {"target": {"kind": "Adb", "key": target.serial}},
+                    "adb_app_stop_target": asdict(target)} for target in (self.target, other)]
+        actions = {"close_app": True, "close_program": False, "close_emulator": False,
+                   "close_maa": True, "system_action": "shutdown"}
+        stopped = []
+        shutdown_states = []
+
+        def stop_target(target):
+            self.fixture.backend.system_action.assert_not_called()
+            self.fixture.backend.defer_system_action.assert_not_called()
+            stopped.append(target)
+            return "completed"
+
+        def request_shutdown(action):
+            shutdown_states.append((action, list(stopped), self.window._adb_app_stop_worker,
+                                    self.window.monitor.ready_to_close, self.window.multi_panel.ready_to_close))
+
+        self.fixture.backend.system_action.side_effect = request_shutdown
+        with patch("app.afterActionUI.AdbAppStopBackend") as backend:
+            backend.return_value.stop.side_effect = stop_target
+            self.window._multi_wave_finished(results, actions)
+            self.wait_until(lambda: self.window._closing and not self.window._completion_pending)
+            self.window._multi_wave_finished(results, actions)
+        self.fixture.backend.system_action.assert_called_once_with("shutdown")
+        self.fixture.backend.defer_system_action.assert_not_called()
+        self.assertEqual(self.window._deferred_system_action, "")
+        self.assertEqual(stopped, [self.target, other])
+        self.assertEqual(shutdown_states, [("shutdown", [self.target, other], None, True, True)])
+
 
 if __name__ == "__main__":
     unittest.main()

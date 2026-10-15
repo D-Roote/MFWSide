@@ -221,6 +221,14 @@ class WindowsAfterActionBackend:
             self.kernel32.CloseHandle(process)
 
 
+def write_after_action_log(log_path, message):
+    path = Path(log_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as stream:
+        from datetime import datetime
+        stream.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}\n")
+
+
 def _run_after_exit(handle, action, log_path):
     backend = WindowsAfterActionBackend()
     try:
@@ -234,11 +242,7 @@ def _run_after_exit(handle, action, log_path):
         message = f"{SYSTEM_ACTIONS[action]} 요청 처리 완료"
     except Exception as error:
         message = f"{SYSTEM_ACTIONS[action]} 요청 실패: {error}"
-    path = Path(log_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as stream:
-        from datetime import datetime
-        stream.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}\n")
+    write_after_action_log(log_path, message)
 
 
 if __name__ == "__main__":

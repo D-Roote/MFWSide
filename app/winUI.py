@@ -31,7 +31,10 @@ from app.settingsUI import AssociatedControlLabel, SettingsPanel
 from app.monitorUI import MonitorCoordinator
 from app.extraFeaturesUI import ExtraFeaturesPanel
 from app.multiExecutionUI import MultiExecutionPanel
-from app.afterActions import AfterActionPreferences, WindowsAfterActionBackend, capture_window_target
+from app.afterActions import (
+    AfterActionPreferences, WindowsAfterActionBackend, capture_window_target,
+    write_after_action_log,
+)
 from app.afterActionUI import AfterActionPanel, AdbAppStopWorker
 from app.adbAppStop import AdbAppStopTarget, capture_adb_app_stop_target
 
@@ -2489,10 +2492,24 @@ class MainWindow(QMainWindow):
 
         if self._deferred_system_action:
             action, self._deferred_system_action = self._deferred_system_action, ""
+            log_path = self.runtime.user_dir / "debug" / "after_action.log"
             try:
-                self.after_action_backend.defer_system_action(action, self.runtime.user_dir / "debug" / "after_action.log")
+                if action == "shutdown":
+                    # Windows shutdown is asynchronous; no process-exit helper is needed.
+                    self.append_log("완료 후 시스템 종료를 요청합니다.")
+                    self.after_action_backend.system_action(action)
+                else:
+                    self.after_action_backend.defer_system_action(action, log_path)
             except Exception as error:
-                self.append_log(f"MAA 종료 후 시스템 동작 예약 실패: {error}")
+                if action == "shutdown":
+                    message = f"시스템 종료 요청 실패: {error}"
+                    self.append_log(message)
+                    try:
+                        write_after_action_log(log_path, message)
+                    except OSError as log_error:
+                        self.append_log(f"시스템 종료 오류 기록 실패: {log_error}")
+                else:
+                    self.append_log(f"MAA 종료 후 시스템 동작 예약 실패: {error}")
         super().closeEvent(event)
 
     def _finish_pending_close(self):
