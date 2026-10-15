@@ -36,6 +36,14 @@ class InterfaceStartupTests(unittest.TestCase):
                 window = MainWindow()
             try:
                 self.assertEqual(window.settings_panel.controller_settings()["type"], "Win32")
+                self.assertEqual(
+                    window.settings_panel.program_path_row.description_label.text(),
+                    "비워 두면 자동 검색 결과를 사용합니다. 폴더 또는 실행 파일을 지정할 수 있습니다.",
+                )
+                self.assertEqual(
+                    window.settings_panel.program_path_input.placeholderText(),
+                    "실행 파일 또는 실행 파일이 있는 폴더",
+                )
                 self.assertFalse(window.ui.workStartBtn.isEnabled())
                 with patch.object(runtime, "initialize") as initialize:
                     window.on_task_start()

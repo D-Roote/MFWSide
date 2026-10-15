@@ -33,7 +33,7 @@ from app.pg_init import (
     resolve_manual_program_path,
 )
 
-WIN32_MANUAL_PATH_DESCRIPTION = '자동 인식이 불가능하면 실행 파일을 지정하세요. "실행 파일 경로.exe" 인수 형식을 사용할 수 있습니다.'
+WIN32_MANUAL_PATH_DESCRIPTION = "비워 두면 자동 검색 결과를 사용합니다. 폴더 또는 실행 파일을 지정할 수 있습니다."
 ADB_MANUAL_PATH_DESCRIPTION = (
     '실행 디바이스의 바로가기 생성 후, 우클릭-속성-바로 가기 탭 의 "대상"을 복사하여 사용합니다.'
 )
@@ -314,7 +314,7 @@ class SettingsPanel(QWidget):
         self.program_path_input = QLineEdit()
         self.program_path_input.setObjectName("programPathInput")
         self.program_path_input.setPlaceholderText(
-            "실행 파일 또는 실행 파일이 있는 폴더 경로"
+            "실행 파일 또는 실행 파일이 있는 폴더"
         )
         self.program_path_input.setMinimumWidth(260)
         self.program_browse_button = QPushButton("찾아보기")
@@ -336,6 +336,9 @@ class SettingsPanel(QWidget):
             WIN32_MANUAL_PATH_DESCRIPTION,
             program_path_controls,
         )
+        program_path_controls.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.program_path_row.layout().setColumnStretch(0, 0)
+        self.program_path_row.layout().setColumnStretch(1, 1)
         self.program_path_row.description_label.installEventFilter(self)
         self.program_path_row.description_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.program_active_status = QLabel()
@@ -779,8 +782,11 @@ class SettingsPanel(QWidget):
         )
         adb = self.controller_settings().get("type") == "Adb"
         self.program_path_row.description_label.setText(ADB_MANUAL_PATH_DESCRIPTION if adb else WIN32_MANUAL_PATH_DESCRIPTION)
-        self._update_program_description_height()
-        self.program_path_input.setPlaceholderText('"앱플레이어 실행 파일.exe" 실행 속성' if adb else '"실행 파일 경로.exe" 인수')
+        self._update_program_path_layout()
+        self.program_path_input.setPlaceholderText(
+            '"앱플레이어 실행 파일.exe" 실행 속성'
+            if adb else "실행 파일 또는 실행 파일이 있는 폴더"
+        )
         self.program_auto_status.setEnabled(not adb)
         auto_path = None if adb else find_auto_program_executable(config)
         self._auto_program_path = auto_path
@@ -822,14 +828,26 @@ class SettingsPanel(QWidget):
             )
         self._set_program_active_status_visible(True, animate)
 
-    def _update_program_description_height(self):
+    def _update_program_path_layout(self):
         label = self.program_path_row.description_label
+        label.setMinimumHeight(0)
+        # Reserve two readable description lines; the path field gets spare width.
+        minimum_width = max(1, self.program_path_row.title_label.sizeHint().width())
+        maximum_width = max(minimum_width, label.fontMetrics().horizontalAdvance(label.text()))
+        two_line_height = 2 * label.fontMetrics().lineSpacing()
+        while minimum_width < maximum_width:
+            width = (minimum_width + maximum_width) // 2
+            if label.heightForWidth(width) <= two_line_height:
+                maximum_width = width
+            else:
+                minimum_width = width + 1
+        self.program_path_row.layout().setColumnMinimumWidth(0, minimum_width + 4)
         label.setMinimumHeight(max(0, label.heightForWidth(max(1, label.width()))))
 
     def eventFilter(self, watched, event):
         if (hasattr(self, "program_path_row") and watched is self.program_path_row.description_label
                 and event.type() in (QEvent.Type.Resize, QEvent.Type.FontChange)):
-            self._update_program_description_height()
+            self._update_program_path_layout()
         return super().eventFilter(watched, event)
 
     def _on_controller_changed(self, _index):

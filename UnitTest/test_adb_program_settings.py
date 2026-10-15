@@ -62,6 +62,24 @@ class AdbProgramSettingsTests(unittest.TestCase):
     def select_adb(self):
         self.panel.controller_combo.setCurrentIndex(self.panel.controller_combo.count() - 1)
 
+    def assert_win32_program_guidance(self):
+        self.assertEqual(self.panel.controller_settings()["type"], "Win32")
+        self.assertEqual(
+            self.panel.program_path_row.description_label.text(),
+            "비워 두면 자동 검색 결과를 사용합니다. 폴더 또는 실행 파일을 지정할 수 있습니다.",
+        )
+        self.assertEqual(
+            self.panel.program_path_input.placeholderText(),
+            "실행 파일 또는 실행 파일이 있는 폴더",
+        )
+        self.assertTrue(self.panel.program_auto_status.isEnabled())
+
+    def test_initial_win32_presets_use_original_program_guidance(self):
+        for index in (0, 1):
+            with self.subTest(preset=index):
+                self.panel.controller_combo.setCurrentIndex(index)
+                self.assert_win32_program_guidance()
+
     def test_switch_to_adb_never_searches_auto_path_and_rejects_empty_manual(self):
         with patch("app.settingsUI.find_auto_program_executable") as auto, \
                 patch("app.settingsUI.find_program_executable") as resolve:
@@ -77,6 +95,8 @@ class AdbProgramSettingsTests(unittest.TestCase):
         self.assertEqual(self.panel.program_path_row.description_label.text(), ADB_MANUAL_PATH_DESCRIPTION)
         self.assertEqual(ADB_MANUAL_PATH_DESCRIPTION,
                          '실행 디바이스의 바로가기 생성 후, 우클릭-속성-바로 가기 탭 의 "대상"을 복사하여 사용합니다.')
+        self.assertEqual(self.panel.program_path_input.placeholderText(),
+                         '"앱플레이어 실행 파일.exe" 실행 속성')
         self.assertFalse(self.panel.program_active_status.property("pathValid"))
         self.assertNotIn("사용 경로:", self.panel.program_active_status.text())
 
@@ -119,12 +139,13 @@ class AdbProgramSettingsTests(unittest.TestCase):
         auto.assert_not_called()
 
     def test_win32_switch_restores_automatic_search_and_description(self):
-        self.select_adb()
-        with patch("app.settingsUI.find_auto_program_executable", return_value=None) as auto:
-            self.panel.controller_combo.setCurrentIndex(0)
-        self.assertGreater(auto.call_count, 0)
-        self.assertTrue(self.panel.program_auto_status.isEnabled())
-        self.assertNotIn("바로가기", self.panel.program_path_row.description_label.text())
+        for index in (0, 1, 0):
+            with self.subTest(preset=index):
+                self.select_adb()
+                with patch("app.settingsUI.find_auto_program_executable", return_value=None) as auto:
+                    self.panel.controller_combo.setCurrentIndex(index)
+                self.assertGreater(auto.call_count, 0)
+                self.assert_win32_program_guidance()
 
     def test_full_shortcut_description_fits_after_resize_in_both_themes(self):
         self.select_adb()
@@ -138,6 +159,61 @@ class AdbProgramSettingsTests(unittest.TestCase):
                 label = self.panel.program_path_row.description_label
                 self.assertGreaterEqual(label.height(), label.heightForWidth(label.width()))
                 self.assertLessEqual(self.panel.detail_contents.width(), self.panel.detail_scroll.viewport().width())
+
+    def test_path_field_uses_spare_width_without_overlapping_or_three_line_guidance(self):
+        self.window.show()
+        self.window.ui.mainPages.setCurrentWidget(self.window.ui.settingTab)
+        minimum_width = self.window.minimumWidth()
+        for theme in ("light", "dark"):
+            self.panel.theme_combo.setCurrentIndex(self.panel.theme_combo.findData(theme))
+            for controller in (0, self.panel.controller_combo.count() - 1):
+                self.panel.controller_combo.setCurrentIndex(controller)
+                previous = None
+                for width in (minimum_width, 1200, 1400, minimum_width):
+                    with self.subTest(theme=theme, controller=controller, width=width):
+                        self.window.resize(width, 850)
+                        QTest.qWait(20)
+                        row = self.panel.program_path_row
+                        label = row.description_label
+                        field = self.panel.program_path_input
+                        controls = field.parentWidget()
+                        self.assertEqual(self.window.minimumWidth(), minimum_width)
+                        self.assertEqual(self.window.width(), width)
+                        self.assertGreater(field.width(), 260)
+                        self.assertLessEqual(
+                            label.heightForWidth(label.width()),
+                            2 * label.fontMetrics().lineSpacing(),
+                        )
+                        self.assertGreaterEqual(label.height(), label.heightForWidth(label.width()))
+                        self.assertGreaterEqual(
+                            controls.x() - label.geometry().right() - 1,
+                            row.layout().horizontalSpacing(),
+                        )
+                        self.assertEqual(controls.geometry().right(), row.contentsRect().right())
+                        self.assertEqual(self.panel.detail_scroll.horizontalScrollBar().maximum(), 0)
+                        if previous is not None:
+                            row_width, field_width = previous
+                            self.assertEqual(field.width() - field_width, row.width() - row_width)
+                        previous = row.width(), field.width()
+
+    def test_confirmed_path_reset_button_fits_at_minimum_width(self):
+        self.window.show()
+        self.window.ui.mainPages.setCurrentWidget(self.window.ui.settingTab)
+        minimum_width = self.window.minimumWidth()
+        self.window.resize(minimum_width, 850)
+        for controller in (0, self.panel.controller_combo.count() - 1):
+            with self.subTest(controller=controller):
+                self.panel.controller_combo.setCurrentIndex(controller)
+                self.panel.program_path_input.setText(f'"{self.executable}"')
+                self.panel._apply_program_path()
+                QTest.qWait(20)
+                self.assertEqual(self.panel.program_apply_button.text(), "초기화")
+                label = self.panel.program_path_row.description_label
+                self.assertEqual(self.window.minimumWidth(), minimum_width)
+                self.assertGreater(self.panel.program_path_input.width(), 260)
+                self.assertLessEqual(label.heightForWidth(label.width()), 2 * label.fontMetrics().lineSpacing())
+                self.assertEqual(self.panel.detail_scroll.horizontalScrollBar().maximum(), 0)
+                self.panel._apply_program_path()
 
 
 if __name__ == "__main__":
