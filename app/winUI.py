@@ -31,7 +31,8 @@ from app.monitorUI import MonitorCoordinator
 from app.extraFeaturesUI import ExtraFeaturesPanel
 from app.multiExecutionUI import MultiExecutionPanel
 from app.afterActions import AfterActionPreferences, WindowsAfterActionBackend, capture_window_target
-from app.afterActionUI import AfterActionPanel
+from app.afterActionUI import AfterActionPanel, AdbAppStopWorker
+from app.adbAppStop import AdbAppStopTarget, capture_adb_app_stop_target
 
 
 WINDOW_SIZE = [1200, 800]
@@ -1613,6 +1614,8 @@ class MainWindow(QMainWindow):
         self._run_succeeded = False
         self._run_stop_requested = False
         self._completion_pending = False
+        self._adb_app_stop_worker = None
+        self._adb_app_stop_final_actions = None
         self._deferred_system_action = ""
         self._closing = False
         try:
@@ -1755,11 +1758,17 @@ class MainWindow(QMainWindow):
         self._refresh_after_action_summary()
 
     def _execute_after_actions(self, actions, target):
+        if actions.get("close_app") and not self._close_pending and not self._closing:
+            remaining = {**actions, "close_app": False, "close_emulator": False}
+            if isinstance(target, AdbAppStopTarget):
+                self._start_adb_app_stop([target], remaining)
+                return
+            self.append_log("완료 후 대상 앱 종료 실패: 실제 작업에 사용한 ADB 대상 정보가 없어 요청을 생략합니다.")
         try:
             if self._close_pending or self._closing:
                 return
-            if actions.get("close_app") or actions.get("close_emulator"):
-                self.append_log("ADB 앱·에뮬레이터 종료는 UI 준비 단계이므로 실제 종료 요청을 생략합니다.")
+            if actions.get("close_emulator"):
+                self.append_log("앱플레이어 자체 종료는 지원하지 않아 요청을 생략합니다.")
             if actions["close_program"]:
                 try:
                     self.after_action_backend.close_program(target)
@@ -1783,6 +1792,37 @@ class MainWindow(QMainWindow):
             self._refresh_after_action_summary()
             self.check_start_button_state()
             self._finish_pending_close()
+
+    def _start_adb_app_stop(self, targets, remaining_actions):
+        if self._adb_app_stop_worker is not None:
+            return
+        self._completion_pending = True
+        self._adb_app_stop_final_actions = dict(remaining_actions)
+        worker = AdbAppStopWorker(targets, self)
+        self._adb_app_stop_worker = worker
+        worker.log.connect(self.append_log)
+        worker.finished.connect(self._on_adb_app_stop_finished)
+        self._refresh_after_action_summary()
+        self.check_start_button_state()
+        try:
+            worker.start()
+        except Exception as error:
+            self.append_log(f"완료 후 대상 앱 종료 실패: {error}")
+            self._on_adb_app_stop_finished()
+
+    def _on_adb_app_stop_finished(self):
+        worker = self._adb_app_stop_worker
+        if worker is None:
+            return
+        worker.deleteLater()
+        self._adb_app_stop_worker = None
+        actions, self._adb_app_stop_final_actions = self._adb_app_stop_final_actions, None
+        if self._closing or self._close_pending:
+            self._completion_pending = False
+            self._refresh_after_action_summary()
+            self._finish_pending_close()
+            return
+        self._execute_after_actions(actions, None)
 
     def _capture_ui_state(self):
         return {
@@ -1892,11 +1932,12 @@ class MainWindow(QMainWindow):
         self._finish_pending_close()
 
     def _multi_wave_finished(self, results, actions):
-        if self._closing or not results or not all(result["succeeded"] for result in results):
+        if self._closing or self._completion_pending or not results or not all(result["succeeded"] for result in results):
             return
         from app.afterActions import WindowTarget
         self.after_actions.consume()
         self.save_user_config()
+        adb_targets = []
         for result in results:
             target = result.get("target")
             if actions.get("close_program") and target:
@@ -1904,13 +1945,20 @@ class MainWindow(QMainWindow):
                     self.after_action_backend.close_program(WindowTarget(**target))
                 except (OSError, RuntimeError) as error:
                     self.append_log(f"다중 실행 완료 후 대상 종료 실패: {error}")
-            if result["connection"].get("target", {}).get("kind") == "Adb" and (
-                    actions.get("close_app") or actions.get("close_emulator")):
-                self.append_log("ADB 앱·에뮬레이터 종료는 UI 준비 단계이므로 실제 종료 요청을 생략합니다.")
+            if result["connection"].get("target", {}).get("kind") == "Adb" and actions.get("close_app"):
+                try:
+                    target = AdbAppStopTarget(**result["adb_app_stop_target"])
+                    if target.serial != result["connection"]["target"]["key"]:
+                        raise ValueError("실행 기기와 종료 대상이 다릅니다.")
+                    adb_targets.append(target)
+                except (KeyError, TypeError, ValueError) as error:
+                    self.append_log(f"다중 실행 완료 후 대상 앱 종료 실패: {error}")
         global_actions = dict(actions)
         for key in ("close_program", "close_app", "close_emulator"):
             global_actions[key] = False
-        if any(global_actions.values()):
+        if adb_targets:
+            self._start_adb_app_stop(adb_targets, global_actions)
+        elif any(global_actions.values()):
             self._completion_pending = True
             QTimer.singleShot(0, lambda: self._execute_after_actions(global_actions, None))
 
@@ -2426,9 +2474,12 @@ class MainWindow(QMainWindow):
         worker_running = self.worker is not None
         stop_running = self.stop_worker is not None
 
+        app_stop_running = self._adb_app_stop_worker is not None
+        if app_stop_running:
+            self._adb_app_stop_worker.requestInterruption()
         self.monitor.shutdown()
         self.multi_panel.shutdown()
-        if worker_running or stop_running or not self.monitor.ready_to_close or not self.multi_panel.ready_to_close:
+        if worker_running or stop_running or app_stop_running or not self.monitor.ready_to_close or not self.multi_panel.ready_to_close:
             self._close_pending = True
             event.ignore()
             if worker_running:
@@ -2449,7 +2500,8 @@ class MainWindow(QMainWindow):
 
         worker_running = self.worker is not None
         stop_running = self.stop_worker is not None
-        if not worker_running and not stop_running and self.monitor.ready_to_close and self.multi_panel.ready_to_close:
+        if (not worker_running and not stop_running and self._adb_app_stop_worker is None
+                and self.monitor.ready_to_close and self.multi_panel.ready_to_close):
             self._close_pending = False
             QTimer.singleShot(0, self.close)
 
@@ -3274,6 +3326,12 @@ class RuntimeWorker(QThread):
                 return
 
             self.log.emit(init_message)
+            if self.completion_actions.get("close_app") and self.runtime.is_adb is True:
+                try:
+                    self.completion_target = capture_adb_app_stop_target(
+                        self.runtime._adb_execution_connection, self.isInterruptionRequested)
+                except (OSError, RuntimeError, ValueError) as error:
+                    self.log.emit(f"완료 후 앱 종료 대상 확인 실패: {error}")
             if self.completion_actions.get("close_program"):
                 try:
                     self.completion_target = capture_window_target(self.runtime._target_hwnd)

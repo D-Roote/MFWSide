@@ -112,6 +112,14 @@ def session_process(snapshot, connection, mode, stop_event, events, desktop_lock
             if preset["type"] == "Win32" and snapshot.get("after_actions", {}).get("close_program"):
                 from dataclasses import asdict
                 outcome["target"] = asdict(capture_window_target(runtime._target_hwnd))
+            if preset["type"] == "Adb" and snapshot.get("after_actions", {}).get("close_app"):
+                from dataclasses import asdict
+                from app.adbAppStop import capture_adb_app_stop_target
+                try:
+                    outcome["adb_app_stop_target"] = asdict(capture_adb_app_stop_target(
+                        runtime._adb_execution_connection, stop_event.is_set))
+                except (OSError, RuntimeError, ValueError) as error:
+                    send("log", f"완료 후 앱 종료 대상 확인 실패: {error}")
             send("state", "running")
             outcome["succeeded"], outcome["message"] = runtime.run_task(
                 snapshot["queue"], minimize_window=snapshot["minimize"], cancellation_requested=stop_event.is_set)

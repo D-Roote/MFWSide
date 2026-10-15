@@ -61,17 +61,19 @@ class PreferenceTests(unittest.TestCase):
         self.assertFalse(any(state.current.values()))
         self.assertEqual(state.current, state.saved)
 
-    def test_emulator_always_implies_app_and_cannot_leave_invalid_saved_state(self):
+    def test_unsupported_legacy_emulator_preference_does_not_force_app_stop(self):
         state = AfterActionPreferences({"close_emulator": True, "close_app": False})
+        self.assertFalse(state.current["close_app"])
+        self.assertFalse(state.for_controller("Adb")["close_emulator"])
+        state.update("close_app", True)
         self.assertTrue(state.current["close_app"])
-        state.update("close_app", False)
-        self.assertTrue(state.current["close_app"])
-        state.update("close_emulator", False)
         state.update("close_app", False)
         self.assertFalse(state.saved["close_app"])
+        self.assertTrue(state.saved["close_emulator"])
 
     def test_controller_projection_preserves_both_modes_but_hides_inactive_actions(self):
-        state = AfterActionPreferences({"close_program": True, "close_emulator": True, "close_maa": True})
+        state = AfterActionPreferences({"close_program": True, "close_app": True,
+                                        "close_emulator": True, "close_maa": True})
         self.assertFalse(state.for_controller("Adb")["close_program"])
         self.assertFalse(state.for_controller("Win32")["close_emulator"])
         self.assertIn("앱 종료", state.description("Adb"))
@@ -228,18 +230,20 @@ class CompletionUITests(unittest.TestCase):
         self.assertFalse(panel.controls["close_maa"].isHidden())
         self.assertFalse(panel.adb_notice.isHidden())
         panel.controls["close_emulator"].click()
-        self.assertTrue(panel.controls["close_app"].isChecked())
-        self.assertFalse(panel.controls["close_app"].isEnabled())
+        self.assertFalse(panel.controls["close_app"].isChecked())
+        self.assertFalse(panel.controls["close_emulator"].isEnabled())
+        self.assertTrue(panel.controls["close_app"].isEnabled())
         panel.controls["close_app"].click()
         self.assertTrue(panel.controls["close_app"].isChecked())
-        self.assertIn("에뮬레이터", self.window.ui.endStatusLabel.text())
+        self.assertIn("대상 앱 종료", self.window.ui.endStatusLabel.text())
         self.window.settings_panel.controller_combo.setCurrentIndex(1)
         self.assertEqual(panel.controller_type, "Win32")
         self.assertTrue(panel.controls["close_emulator"].isHidden())
         self.assertTrue(panel.controls["close_program"].isChecked())
         self.assertNotIn("에뮬레이터", self.window.ui.endStatusLabel.text())
         self.window.monitor.select_preset("Android")
-        self.assertTrue(panel.controls["close_emulator"].isChecked())
+        self.assertFalse(panel.controls["close_emulator"].isChecked())
+        self.assertTrue(panel.controls["close_app"].isChecked())
         panel.controls["close_emulator"].click()
         self.assertTrue(panel.controls["close_app"].isEnabled())
 
@@ -267,31 +271,32 @@ class CompletionUITests(unittest.TestCase):
         self.window.monitor.select_preset("Android")
         self.window.show_after_actions()
         panel = self.window.after_action_panel
-        panel.controls["close_emulator"].click()
+        panel.controls["close_app"].click()
         panel.once_checkbox.click()
-        panel.controls["close_emulator"].click()
         panel.controls["close_app"].click()
         saved = json.loads(self.path.read_text(encoding="utf-8"))["after_actions"]
         self.assertTrue(saved["close_app"])
-        self.assertTrue(saved["close_emulator"])
+        self.assertFalse(saved["close_emulator"])
         self.window.after_actions.consume()
         panel.sync()
-        self.assertTrue(panel.controls["close_emulator"].isChecked())
+        self.assertTrue(panel.controls["close_app"].isChecked())
+        self.assertFalse(panel.controls["close_emulator"].isChecked())
         panel.clear_button.click()
         self.assertFalse(any(self.window.after_actions.saved.values()))
 
-    def test_adb_ui_only_selection_never_closes_win32_program_or_sends_commands(self):
+    def test_missing_adb_target_never_closes_win32_program_or_sends_commands(self):
         self.enable_adb()
         self.window.after_actions.update("close_program", True)
         self.window.monitor.select_preset("Android")
         self.window.after_actions.update("close_emulator", True)
+        self.window.after_actions.update("close_app", True)
         self.start()
         self.window.on_task_finished()
         fixtures.QApplication.processEvents()
         self.backend.close_program.assert_not_called()
         self.backend.system_action.assert_not_called()
         self.backend.defer_system_action.assert_not_called()
-        self.assertIn("UI 준비 단계", self.window.ui.logPrintText.toPlainText())
+        self.assertIn("실제 작업에 사용한 ADB 대상 정보가 없어", self.window.ui.logPrintText.toPlainText())
 
     def test_optical_checkbox_actual_painted_ink_is_centered_in_light_and_dark(self):
         self.window.show_after_actions()

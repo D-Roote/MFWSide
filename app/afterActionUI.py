@@ -1,5 +1,5 @@
 """Completion settings hosted in the existing central detail pane."""
-from PySide6.QtCore import QPointF, Qt, Signal
+from PySide6.QtCore import QPointF, Qt, QThread, Signal
 from PySide6.QtGui import QFontMetricsF, QPainter, QPalette
 from PySide6.QtWidgets import (
     QCheckBox, QFrame, QLabel, QPushButton, QStyle, QStyleOptionButton,
@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.afterActions import SYSTEM_ACTIONS
+from app.adbAppStop import AdbAppStopBackend
 
 
 class OpticalCheckBox(QCheckBox):
@@ -59,13 +60,14 @@ class AfterActionPanel(QWidget):
         root.addWidget(self.once_checkbox)
         self.controls = {}
         self._title(root, "프로그램")
-        for key, label in (("close_program", "대상 프로그램 종료"), ("close_app", "앱 종료"),
-                           ("close_emulator", "에뮬레이터 종료"), ("close_maa", "MAA 종료")):
+        for key, label in (("close_program", "대상 프로그램 종료"), ("close_app", "대상 앱 종료"),
+                           ("close_emulator", "앱플레이어 종료 (미지원)"), ("close_maa", "MAA 종료")):
             control = self._checkbox(root, key, label)
             control.toggled.connect(lambda checked, name=key: self._update(name, checked))
         self.controls["close_program"].setToolTip("실제 작업 실행 창에 정상 종료를 요청합니다. 강제 종료하지 않습니다.")
-        self.controls["close_emulator"].setToolTip("선택하면 앱 종료도 반드시 선택됩니다. 현재는 UI만 제공하며 실제 종료 명령은 준비 중입니다.")
-        self.adb_notice = QLabel("ADB 종료 옵션은 UI 준비 단계입니다.\n앱·에뮬레이터 종료 명령은 아직 실행하지 않습니다.")
+        self.controls["close_emulator"].setEnabled(False)
+        self.controls["close_emulator"].setToolTip("공통 ADB 명령만으로 앱플레이어 자체를 안전하게 종료할 수 없어 지원하지 않습니다.")
+        self.adb_notice = QLabel("대상 앱 패키지 정보가 없어 선택한 기기의 사용자 설치 앱을 종료합니다.\n시스템·홈·입력기 앱은 제외하며, 앱플레이어 자체는 종료하지 않습니다.")
         self.adb_notice.setObjectName("afterActionHint")
         self.adb_notice.setWordWrap(True)
         root.addWidget(self.adb_notice)
@@ -111,15 +113,14 @@ class AfterActionPanel(QWidget):
         for key in ("close_app", "close_emulator"):
             self.controls[key].setVisible(is_adb)
         self.adb_notice.setVisible(is_adb)
-        self.controls["close_app"].setEnabled(not self.preferences.current["close_emulator"])
+        self.controls["close_app"].setEnabled(True)
         self.controls["close_app"].setToolTip(
-            "에뮬레이터 종료 선택 중에는 앱 종료를 해제할 수 없습니다."
-            if self.preferences.current["close_emulator"] else "현재는 UI만 제공하며 실제 앱 종료 명령은 준비 중입니다."
+            "작업에 사용한 ADB 기기의 사용자 설치 앱을 모두 종료합니다. 시스템·홈·입력기는 제외하고 앱 데이터는 삭제하지 않습니다. 앱을 다시 열기 전까지 백그라운드 알림도 중지될 수 있습니다."
         )
         values = [(self.once_checkbox, self.preferences.once)]
         for key, control in self.controls.items():
             checked = (self.preferences.current["system_action"] == key if key in SYSTEM_ACTIONS
-                       else self.preferences.current[key])
+                       else False if key == "close_emulator" else self.preferences.current[key])
             values.append((control, checked))
         for control, checked in values:
             old = control.blockSignals(True)
@@ -143,3 +144,22 @@ class AfterActionPanel(QWidget):
         self.preferences.clear()
         self.sync()
         self.changed.emit()
+
+
+class AdbAppStopWorker(QThread):
+    """Wait off the GUI thread; no Maa controller survives in this worker."""
+    log = Signal(str)
+
+    def __init__(self, targets, parent=None):
+        super().__init__(parent)
+        self.targets = tuple(targets)
+
+    def run(self):
+        for target in self.targets:
+            if self.isInterruptionRequested():
+                break
+            try:
+                message = AdbAppStopBackend(self.isInterruptionRequested).stop(target)
+                self.log.emit(f"{target.serial}: {message}")
+            except Exception as error:
+                self.log.emit(f"{target.serial}: 완료 후 대상 앱 종료 실패: {error}")

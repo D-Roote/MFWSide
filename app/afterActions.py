@@ -19,7 +19,7 @@ def normalize_after_actions(value):
     system = value.get("system_action")
     return {
         "close_program": value.get("close_program") is True,
-        "close_app": value.get("close_app") is True or value.get("close_emulator") is True,
+        "close_app": value.get("close_app") is True,
         "close_emulator": value.get("close_emulator") is True,
         "close_maa": value.get("close_maa") is True,
         "system_action": system if isinstance(system, str) and system in SYSTEM_ACTIONS else "",
@@ -54,6 +54,8 @@ class AfterActionPreferences:
 
     def for_controller(self, controller_type="Win32"):
         actions = dict(self.current)
+        # Keep legacy preferences on disk, but unsupported host shutdown is inert.
+        actions["close_emulator"] = False
         if controller_type == "Adb":
             actions["close_program"] = False
         else:
@@ -67,7 +69,7 @@ class AfterActionPreferences:
         if actions["close_program"]:
             parts.append("대상 프로그램 종료")
         if actions["close_app"]:
-            parts.append("앱 종료")
+            parts.append("대상 앱 종료")
         if actions["close_emulator"]:
             parts.append("에뮬레이터 종료")
         if actions["close_maa"]:
