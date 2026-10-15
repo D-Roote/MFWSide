@@ -3,10 +3,16 @@
 Windows에서 가상환경을 준비한 뒤 저장소 루트에서 실행합니다.
 
 ```powershell
-.venv/Scripts/python.exe -m unittest discover -s UnitTest -v
+.venv/Scripts/python.exe UnitTest/run_tests.py
 ```
 
 게임 실행, Tasker 수명주기, 최소화, 작업 목록 및 설정 UI의 회귀를 검증합니다. 게임 실행·캡처·입력 API는 모의 객체로 대체하고 Qt는 offscreen 모드로 사용하므로 실제 게임을 실행하거나 조작하지 않습니다.
+
+기본 실행기는 테스트 파일별로 Python 프로세스를 분리합니다. 각 프로세스의 PID와 `.cache/test_diagnostics/python_fault_PID.log`를 출력하고, Windows 오류/JIT 대화상자에서 대기하지 않도록 테스트 프로세스에만 오류 모드를 적용합니다. 비정상 종료·일반 실패·180초 초과는 실패로 보고하며 자동 재시도하지 않습니다. 실제 앱의 오류 처리와 레지스트리는 변경하지 않습니다.
+
+단일 파일은 `-p test_after_actions.py -v`, 기존 단일 프로세스 재현은 `--in-process`, 매 테스트 후 강제 메모리 수거 진단은 `--in-process --collect-between-tests`를 추가합니다. 강제 수거는 Qt 객체 정리 충돌을 재현할 수 있는 진단 옵션이며 정상 통과를 보장하지 않습니다. `test_test_runner.py`는 자식 프로세스를 실제 실행하지 않고 격리·필터 전달·시간 초과·네이티브 오류 코드 전파를 검증합니다.
+
+2026-10-16 단일 프로세스/강제 수거에서 Qt 정리 중 접근 위반을 재현했습니다. 파일별 격리는 테스트 간 간섭과 오류창 대기를 완화하는 조치이며 Qt/Shiboken 네이티브 원인의 완전한 해결로 보지 않습니다. 원인 확인 없이 컨트롤러/Tasker 정리 순서나 배포 앱의 타이머 동작은 바꾸지 않았습니다.
 
 `test_pipeline_defaults.py`는 설치된 MaaFramework SDK로 프로젝트 리소스를 실제 로드하고 Pipeline v2 기본값의 상속·노드별 덮어쓰기를 확인합니다. 전체 파이프라인(백업 JSON 포함)에 `LongPress`가 남아 있지 않은지, `Click`의 좌표·오프셋이 유지되고 `duration`이 없는지도 검사합니다. 캡처·인식 실행·입력 동작은 수행하지 않습니다. 기준 문서는 [MaaFramework 5.12.3 Pipeline Protocol](https://github.com/MaaXYZ/MaaFramework/blob/v5.12.3/docs/en_us/3.1-PipelineProtocol.md)입니다.
 
