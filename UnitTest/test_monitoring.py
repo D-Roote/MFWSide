@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "assets"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.monitoring import MonitoringService, supported_presets, normalize_screen_preferences
 
 

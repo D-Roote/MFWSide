@@ -16,7 +16,7 @@ from unittest.mock import ANY, MagicMock, call, patch
 import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "assets"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from PySide6.QtCore import QEvent, QMimeData, QObject, QPoint, QPointF, QSize, Qt
 from PySide6.QtTest import QTest

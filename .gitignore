@@ -24,8 +24,6 @@ pip-delete-this-directory.txt
 
 #Cache
 __pycache__/
-assets/**/__pycache__/
-assets/**/*.pyc
 *$py.class
 *.py[cod]
 *.pyd

@@ -12,7 +12,7 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "assets"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from maa.controller import Controller, CustomController
 from maa.resource import Resource
 from maa.tasker import Tasker

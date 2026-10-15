@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QAbstractItemView,
                                QStyleOptionSlider)
 
 from app.runtime import AppRuntime, PROGRAM_LAUNCH_ENTRY
+from app.paths import PATHS
 from app.controls import PopupOnlyWheelComboBox
 from app.settingsUI import AssociatedControlLabel, SettingsPanel
 from app.monitorUI import MonitorCoordinator
@@ -41,9 +42,9 @@ UI_FILENAME = "baseUI.ui"
 QSS_FILENAME = "style.qss"
 SETTINGS_QSS_FILENAME = "settings.qss"
 DARK_QSS_FILENAME = "dark.qss"
-APP_DIR = Path(__file__).resolve().parent
-UI_DIR = APP_DIR / "pySide6"
-UI_RESOURCE_DIR = APP_DIR / "resources"
+APP_DIR = PATHS.app_dir
+UI_DIR = PATHS.ui_dir
+UI_RESOURCE_DIR = PATHS.ui_resource_dir
 SETTINGS_ICON_PATH = UI_RESOURCE_DIR / "icons/actions/settings.svg"
 LOG_MENU_EXPAND_ICON_PATH = UI_RESOURCE_DIR / "icons/actions/chevron-left.svg"
 LOG_MENU_COLLAPSE_ICON_PATH = UI_RESOURCE_DIR / "icons/actions/chevron-right.svg"

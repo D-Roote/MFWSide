@@ -17,6 +17,7 @@ from maa.resource import Resource
 from maa.tasker import Tasker
 from maa.toolkit import Toolkit
 
+from app.paths import PATHS
 from app.pg_init import build_program_launch_command
 from app.adbStartup import (
     adb_controller_options, adb_target_descriptor, launch_adb_program,
@@ -161,10 +162,11 @@ def create_user32():
 
 class AppRuntime:
     def __init__(self):
-        self.base_dir = Path(__file__).resolve().parent.parent
-        self.resource_dir = self.base_dir / "resources"
-        self.user_dir = self.base_dir / "user"
-        self.interface_path = self.resource_dir / "interface.json"
+        # Preserve resources, OCR models and user config at their existing paths.
+        self.base_dir = PATHS.assets_dir
+        self.resource_dir = PATHS.resource_dir
+        self.user_dir = PATHS.user_dir
+        self.interface_path = PATHS.interface_path
         self.interface_missing = False
 
         self.interface = self._load_interface()

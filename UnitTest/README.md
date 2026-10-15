@@ -8,6 +8,8 @@ Windows에서 가상환경을 준비한 뒤 저장소 루트에서 실행합니�
 
 게임 실행, Tasker 수명주기, 최소화, 작업 목록 및 설정 UI의 회귀를 검증합니다. 게임 실행·캡처·입력 API는 모의 객체로 대체하고 Qt는 offscreen 모드로 사용하므로 실제 게임을 실행하거나 조작하지 않습니다.
 
+앱 진입점은 루트 `main.py`, 패키지/UI는 루트 `app/`입니다. `test_app_paths.py`는 외부 작업 디렉토리에서의 import/진입점, 기존 `assets/user`·리소스/OCR 모델 경로 보존, 패키지 내부 UI/아이콘, frozen EXE 옆 외부 데이터 경로 및 interface 기준 상대 bundle 경로를 검증합니다. frozen 경로는 모의 검증이며 실제 빌드/종료 도우미 검증은 아닙니다. 선택 native probe도 루트 패키지를 import하지만 기본 테스트에서 실제 창/SDK 컨트롤러 probe는 실행하지 않습니다.
+
 기본 실행기는 테스트 파일별로 Python 프로세스를 분리합니다. 각 프로세스의 PID와 `.cache/test_diagnostics/python_fault_PID.log`를 출력하고, Windows 오류/JIT 대화상자에서 대기하지 않도록 테스트 프로세스에만 오류 모드를 적용합니다. 비정상 종료·일반 실패·180초 초과는 실패로 보고하며 자동 재시도하지 않습니다. 실제 앱의 오류 처리와 레지스트리는 변경하지 않습니다.
 
 단일 파일은 `-p test_after_actions.py -v`, 기존 단일 프로세스 재현은 `--in-process`, 매 테스트 후 강제 메모리 수거 진단은 `--in-process --collect-between-tests`를 추가합니다. 강제 수거는 Qt 객체 정리 충돌을 재현할 수 있는 진단 옵션이며 정상 통과를 보장하지 않습니다. `test_test_runner.py`는 자식 프로세스를 실제 실행하지 않고 격리·필터 전달·시간 초과·네이티브 오류 코드 전파를 검증합니다.
