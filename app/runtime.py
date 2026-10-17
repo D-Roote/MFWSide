@@ -1,4 +1,5 @@
 from pathlib import Path
+from copy import deepcopy
 from typing import Callable
 import csv
 import json
@@ -935,6 +936,38 @@ class AppRuntime:
         minimize_window: bool = False,
         cancellation_requested: Callable[[], bool] | None = None,
     ):
+        self._connection_retry_context = None
+        arguments = dict(controller_settings=controller_settings, program_settings=program_settings,
+                         execution_queue=execution_queue, minimize_window=minimize_window,
+                         cancellation_requested=cancellation_requested)
+        result = self._initialize_once(**arguments)
+        context = self._connection_retry_context
+        if result[0] or not context or not (program_settings or {}).get("restart_on_connection_failure"):
+            return result
+        if cancellation_requested and cancellation_requested():
+            return False, "작업 시작이 취소되었습니다."
+        from app.adbStartup import close_adb_player_for_retry
+        self.log_sink._emit("ADB 연결 실패로 앱플레이어 재시작을 1회 시도합니다.")
+        closed, message = close_adb_player_for_retry(program_settings, context, cancellation_requested)
+        if not closed:
+            return False, f"{result[1]}\n{message}"
+        # The failed attempt has fully released native owners before closing
+        # the player. A second failure is returned without another restart.
+        queue = (list(execution_queue) if execution_queue is not None else
+                 [(task["entry"], {}) for task in self.interface.get("task", []) if task.get("entry")])
+        if not any(entry == PROGRAM_LAUNCH_ENTRY for entry, _override in queue):
+            queue.insert(0, (PROGRAM_LAUNCH_ENTRY, {}))
+        arguments["execution_queue"] = queue
+        return self._initialize_once(**arguments)
+
+    def _initialize_once(
+        self,
+        controller_settings: dict | None = None,
+        program_settings: dict | None = None,
+        execution_queue: list[tuple[str, dict]] | None = None,
+        minimize_window: bool = False,
+        cancellation_requested: Callable[[], bool] | None = None,
+    ):
         released, release_message = self.release_session()
         if not released:
             return False, release_message
@@ -944,6 +977,11 @@ class AppRuntime:
             self.controller_config, self._controller_selection_status = self._select_controller_config(controller_settings)
             self._startup_cancellation_requested = cancellation_requested
             self._startup_minimize_requested = minimize_window
+            launcher = (program_settings or {}).get("_startup_launcher")
+            if (self.is_adb and isinstance(launcher, dict) and type(launcher.get("pid")) is int
+                    and launcher["pid"] > 0 and isinstance(launcher.get("path"), str) and launcher["path"]):
+                self._adb_launcher_pid = launcher["pid"]
+                self._adb_launcher_path = Path(launcher["path"])
             if not self._toolkit_initialized:
                 if not Toolkit.init_option(str(self.user_dir)):
                     return False, "MaaFW Toolkit 초기화에 실패했습니다."
@@ -1030,6 +1068,12 @@ class AppRuntime:
 
             executed, execute_message = self._execute_controller()
             if not executed:
+                if self.is_adb:
+                    self._connection_retry_context = {
+                        "connection": deepcopy(self._adb_execution_connection),
+                        "launcher_pid": self._adb_launcher_pid,
+                        "launcher_path": self._adb_launcher_path,
+                    }
                 return False, execute_message
 
             # 프로그램 시작/대기가 끝난 뒤에만 새 Tasker를 생성한다.

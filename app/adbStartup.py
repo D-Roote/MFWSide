@@ -5,7 +5,7 @@ import subprocess
 import time
 
 from maa.toolkit import Toolkit
-from app.pg_init import parse_manual_program_command
+from app.pg_init import parse_extra_arguments, parse_manual_program_command
 from app.programLaunch import is_shortcut, launch_shortcut
 
 
@@ -99,6 +99,7 @@ def launch_adb_program(runtime, settings, cancellation_requested=None, minimize=
     shortcut_process = None
     try:
         executable, arguments = parse_manual_program_command((settings or {}).get("manual_path"))
+        arguments = settings.get("launch_arguments", arguments + parse_extra_arguments(settings.get("extra_arguments", "")))
         if cancellation_requested is not None and cancellation_requested():
             return False, "앱플레이어 자동 실행이 취소되었습니다."
         options = {}
@@ -123,8 +124,11 @@ def launch_adb_program(runtime, settings, cancellation_requested=None, minimize=
         # Confirm the launched PID, wait for loading, then validate the actual
         # selected device through Controller.post_connection; do not guess a child.
         runtime._program_started_for_session = True
-        runtime.log_sink._emit("앱플레이어 로딩을 기다립니다. 60초 후 다음 작업을 시작합니다.")
-        deadline = time.monotonic() + ADB_POST_PROCESS_WAIT_SECONDS
+        wait_seconds = settings.get("adb_startup_wait_seconds", ADB_POST_PROCESS_WAIT_SECONDS)
+        if not isinstance(wait_seconds, (int, float)) or isinstance(wait_seconds, bool) or not 0 <= wait_seconds <= 3600:
+            wait_seconds = ADB_POST_PROCESS_WAIT_SECONDS
+        runtime.log_sink._emit(f"앱플레이어 로딩을 기다립니다. {wait_seconds:g}초 후 다음 작업을 시작합니다.")
+        deadline = time.monotonic() + wait_seconds
         next_minimize = 0.0
         while True:
             if cancellation_requested is not None and cancellation_requested():
@@ -147,3 +151,51 @@ def launch_adb_program(runtime, settings, cancellation_requested=None, minimize=
     finally:
         if shortcut_process is not None:
             shortcut_process.close()
+
+
+def close_adb_player_for_retry(settings, context, cancellation_requested=None):
+    """Normal close of one verified window/process only. No taskkill/vendor CLI."""
+    from app.afterActions import WindowsAfterActionBackend, capture_window_target
+    from app.monitoring import window_process_info
+    from app.storageManagement import process_active
+    try:
+        executable, _arguments = parse_manual_program_command(settings.get("manual_path"))
+        launcher_pid = context.get("launcher_pid")
+        launcher_path = context.get("launcher_path")
+        if not launcher_pid or not launcher_path:
+            return False, "이 세션에서 실행한 앱플레이어 프로세스를 확인할 수 없어 자동 재시작을 생략합니다."
+        if is_shortcut(executable):
+            expected_path = Path(launcher_path)
+        else:
+            expected_path = executable
+            if Path(launcher_path) != expected_path:
+                return False, "설정한 경로와 실행 프로세스가 달라 자동 재시작을 생략합니다."
+        explicit = (context.get("connection") or {}).get("emulator") or {}
+        windows = ([explicit] if explicit else [
+            {"hwnd": getattr(window.hwnd, "value", window.hwnd)}
+            for window in Toolkit.find_desktop_windows() or [] if window.window_name])
+        candidates = []
+        for window in windows:
+            hwnd = window.get("hwnd")
+            pid, path = window_process_info(hwnd)
+            if not pid or not path or Path(path) != expected_path:
+                continue
+            if (explicit and pid != explicit.get("pid")) or (launcher_pid and pid != launcher_pid):
+                continue
+            candidates.append(capture_window_target(hwnd))
+        if len(candidates) != 1:
+            return False, "재시작할 앱플레이어 창을 하나로 특정하지 못했습니다. 실제 실행 파일 경로를 확인하세요."
+        target = candidates[0]
+        if cancellation_requested and cancellation_requested():
+            return False, "앱플레이어 재시작이 취소되었습니다."
+        WindowsAfterActionBackend().close_program(target)
+        deadline = time.monotonic() + 10
+        while process_active(target.pid):
+            if cancellation_requested and cancellation_requested():
+                return False, "앱플레이어 재시작이 취소되었습니다."
+            if time.monotonic() >= deadline:
+                return False, "앱플레이어가 정상 종료 요청에 응답하지 않아 재시작을 중단했습니다. 강제 종료하지 않습니다."
+            time.sleep(0.1)
+        return True, "앱플레이어를 정상 종료했습니다."
+    except (OSError, RuntimeError, TypeError, ValueError) as error:
+        return False, f"앱플레이어 재시작 준비 실패: {error}"

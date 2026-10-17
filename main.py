@@ -7,6 +7,7 @@ def main() -> int:
     enable_fault_log(PATHS.user_dir / "debug")
     # Spawn workers import __main__; they must not import/create the GUI.
     from PySide6.QtWidgets import QApplication, QMessageBox
+    from PySide6.QtCore import QTimer
     from app.winUI import MainWindow
     app = QApplication(sys.argv)
 
@@ -16,6 +17,7 @@ def main() -> int:
         QMessageBox.critical(None, "앱 초기화 오류", f"프로젝트 설정을 확인하세요.\n{error}")
         return 1
     window.show()
+    QTimer.singleShot(0, window.app_startup.start)
     
     return app.exec()
 

@@ -22,16 +22,19 @@ from PySide6.QtWidgets import (
 )
 
 from app.runtime import WIN32_METHOD_DEFAULTS, WIN32_METHOD_PRIORITY
-from app.controls import PopupOnlyWheelComboBox
+from app.controls import NoWheelSpinBox, PopupOnlyWheelComboBox
 from app.programTest import ProgramTestWorker
 from app.settingsNavigation import SETTINGS_SECTIONS, SettingsNavigation, normalize_section_order
 from app.managementUI import ManagementPanel
+from app.paths import PATHS
+from app.startupSettings import WindowsStartupRegistration, normalize_startup_config
 from app.monitoring import normalize_connection_preferences, normalize_screen_preferences
 from app.pg_init import (
     DEFAULT_PROGRAM_CONFIG,
     find_auto_program_executable,
     find_program_executable,
     normalize_program_config,
+    parse_extra_arguments,
     parse_manual_program_command,
     resolve_manual_program_path,
 )
@@ -57,6 +60,7 @@ DEFAULT_MAA_CONFIG = {
         "theme": "light",
     },
     "section_order": normalize_section_order(None),
+    "startup": normalize_startup_config(None),
 }
 
 
@@ -120,6 +124,7 @@ class SettingsStore:
             config["connection"] = normalize_connection_preferences(raw_config.get("connection"))
             config["monitor"] = normalize_screen_preferences(raw_config.get("monitor"))
             config["section_order"] = normalize_section_order(raw_config.get("section_order"))
+            config["startup"] = normalize_startup_config(raw_config.get("startup"))
 
             raw_appearance = raw_config.get("appearance")
             if isinstance(raw_appearance, dict):
@@ -184,6 +189,8 @@ class AssociatedControlLabel(QLabel):
 
 
 class SettingsPanel(QWidget):
+    SECTION_TOP_INSET = 4
+
     minimize_changed = Signal(bool)
     program_launch_task_enabled_changed = Signal(bool)
     runtime_option_editing_changed = Signal(bool)
@@ -209,6 +216,7 @@ class SettingsPanel(QWidget):
         self._program_test_closing = False
         self._program_test_allowed = True
         self.program_test_guard = lambda: True
+        self.startup_registration = WindowsStartupRegistration(PATHS.root_dir)
         self.controllers = self._filter_controllers(
             controllers, supported_controller_names
         )
@@ -268,7 +276,7 @@ class SettingsPanel(QWidget):
         self.detail_contents = QWidget()
         self.detail_contents.setObjectName("settingsDetailContents")
         self.detail_layout = QVBoxLayout(self.detail_contents)
-        self.detail_layout.setContentsMargins(0, 0, 6, 0)
+        self.detail_layout.setContentsMargins(0, self.SECTION_TOP_INSET, 6, 4)
         self.detail_layout.setSpacing(14)
 
         general, general_layout = self._create_section(
@@ -315,8 +323,45 @@ class SettingsPanel(QWidget):
         )
 
         program, program_layout = self._create_section(
-            "프로그램", "자동 실행에 사용할 대상 프로그램을 확인하거나 직접 지정합니다."
+            "시작 설정",
+            "MAABA 시작 동작과 자동 실행할 대상 프로그램을 설정합니다.\n"
+            "변경한 시작 동작은 다음 MAABA 실행부터 적용됩니다.",
         )
+        self.startup_checkboxes = {}
+        for key, title, description in (
+            ("launch_on_login", "시스템 시작 시 MAABA 실행", "현재 Windows 사용자 로그인 시 이 앱을 실행합니다."),
+            ("minimize_app", "MAABA 실행 후 최소화", "앱을 실행한 뒤 MAABA 창을 최소화합니다."),
+            ("auto_start_tasks", "MAABA 실행 후 작업 자동 시작", "설정을 복원한 뒤 시작 탭에서 선택한 작업을 한 번 실행합니다."),
+            ("launch_program", "MAABA 실행 후 대상 프로그램 실행", "아래 경로로 프로그램을 실행합니다. ADB에서는 앱플레이어를 실행하며 게임 앱은 파이프라인에서 실행합니다."),
+        ):
+            checkbox = QCheckBox()
+            checkbox.setObjectName("settingsCheckbox")
+            checkbox.setAccessibleName(title)
+            self.startup_checkboxes[key] = checkbox
+            self._add_setting_row(program_layout, title, description, checkbox, control_right_margin=12)
+            if key == "auto_start_tasks":
+                self.auto_start_wait_spin = NoWheelSpinBox()
+                self.auto_start_wait_spin.setObjectName("settingsSpinBox")
+                self.auto_start_wait_spin.setRange(0, 3600)
+                self.auto_start_wait_spin.setSuffix(" 초")
+                self.auto_start_wait_row = self._add_setting_row(
+                    program_layout,
+                    "자동 시작 대기 시간",
+                    "작업을 자동 시작하기 전 기다릴 시간입니다. 0초는 즉시 시작합니다.",
+                    self.auto_start_wait_spin,
+                )
+                self.auto_start_wait_spin.setAccessibleName("작업 자동 시작 대기 시간")
+                self.auto_start_wait_row.hide()
+        self.startup_status = QLabel()
+        self.startup_status.setObjectName("settingsRowDescription")
+        self.startup_status.setWordWrap(True)
+        self.startup_status.hide()
+        program_layout.addWidget(self.startup_status)
+        self.startup_cancel_button = QPushButton("시작 동작 취소")
+        self.startup_cancel_button.setObjectName("monitorActionButton")
+        self.startup_cancel_button.hide()
+        program_layout.addWidget(self.startup_cancel_button)
+        self.program_paths_divider = self._add_section_divider(program_layout)
         self.program_auto_status = QLabel()
         self.program_auto_status.setObjectName("programPathStatus")
         self.program_auto_status.setWordWrap(True)
@@ -366,7 +411,7 @@ class SettingsPanel(QWidget):
             "programActiveStatusContainer"
         )
         active_status_layout = QVBoxLayout(self.program_active_status_container)
-        active_status_layout.setContentsMargins(0, 8, 0, 0)
+        active_status_layout.setContentsMargins(0, 0, 0, 12)
         active_status_layout.setSpacing(0)
         active_status_layout.addWidget(self.program_active_status)
         self.program_active_status_effect = QGraphicsOpacityEffect(
@@ -377,9 +422,27 @@ class SettingsPanel(QWidget):
             self.program_active_status_effect
         )
         program_layout.addWidget(self.program_active_status_container)
-        self.program_path_row.layout().setContentsMargins(0, 12, 0, 0)
         self._program_status_animation = None
         self._manual_path_error_active = False
+        self.program_extra_input = QLineEdit()
+        self.program_extra_input.setObjectName("programPathInput")
+        self.program_extra_input.setPlaceholderText('예: --profile "사용자 1"')
+        self.program_extra_input.setMinimumWidth(240)
+        self.program_extra_row = self._add_setting_row(program_layout, "추가 인수", "수동 경로에 포함한 인수 뒤에 추가합니다. 바로가기 자체의 인수는 유지합니다.", self.program_extra_input)
+        self.startup_wait_spin = NoWheelSpinBox()
+        self.startup_wait_spin.setObjectName("settingsSpinBox")
+        self.startup_wait_spin.setRange(0, 3600)
+        self.startup_wait_spin.setSuffix(" 초")
+        self.startup_wait_row = self._add_setting_row(program_layout, "앱플레이어 실행 대기", "ADB 앱플레이어 실행 요청 후 로딩을 기다릴 시간입니다.", self.startup_wait_spin)
+        self.restart_connection_checkbox = QCheckBox()
+        self.restart_connection_checkbox.setObjectName("settingsCheckbox")
+        self.restart_row = self._add_setting_row(program_layout, "연결 실패 시 앱플레이어 재시작", "이 세션에서 직접 실행한 프로세스에 정상 종료를 요청하고 1회 재연결합니다. 런처가 다른 프로세스로 넘기거나 종료를 거부하면 생략합니다.", self.restart_connection_checkbox, control_right_margin=12)
+        self.restart_connection_checkbox.setAccessibleName("연결 실패 시 앱플레이어 재시작")
+        self.startup_warning_divider = self._add_section_divider(program_layout)
+        self.startup_warning = QLabel("시작 동작·최소화·재시작은 일부 프로그램이나 바로가기에서 적용되지 않을 수 있습니다.")
+        self.startup_warning.setObjectName("settingsRowDescription")
+        self.startup_warning.setWordWrap(True)
+        program_layout.addWidget(self.startup_warning)
 
         controller, controller_layout = self._create_section(
             "컨트롤러", "실행에 사용할 컨트롤러를 선택합니다."
@@ -471,11 +534,21 @@ class SettingsPanel(QWidget):
         description_label.setObjectName("settingsSectionDescription")
         description_label.setWordWrap(True)
         layout.addWidget(description_label)
+        section.description_label = description_label
         layout.addSpacing(6)
 
         self.detail_layout.addWidget(section)
         self._sections.append(section)
         return section, layout
+
+    @staticmethod
+    def _add_section_divider(layout):
+        divider = QFrame()
+        divider.setObjectName("settingsDivider")
+        divider.setFixedHeight(1)
+        layout.addWidget(divider)
+        layout.addSpacing(12)
+        return divider
 
     @staticmethod
     def _add_setting_row(
@@ -537,6 +610,21 @@ class SettingsPanel(QWidget):
             self.controller_combo.setCurrentIndex(controller_index)
         self._confirmed_manual_path = self.config["program"]["manual_path"]
         self.program_path_input.setText(self._confirmed_manual_path)
+        self.program_extra_input.setText(self.config["program"]["extra_arguments"])
+        startup = normalize_startup_config(self.config.get("startup"))
+        for key, checkbox in self.startup_checkboxes.items():
+            checkbox.setChecked(startup[key])
+        self.auto_start_wait_spin.setValue(startup["task_wait_seconds"])
+        self.auto_start_wait_row.setVisible(startup["auto_start_tasks"])
+        self.startup_wait_spin.setValue(startup["emulator_wait_seconds"])
+        self.restart_connection_checkbox.setChecked(startup["restart_on_connection_failure"])
+        try:
+            registered = self.startup_registration.is_enabled()
+            self.startup_checkboxes["launch_on_login"].setChecked(registered)
+            self.config["startup"]["launch_on_login"] = registered
+        except (OSError, ValueError, ImportError) as error:
+            self.startup_status.setText(f"시스템 시작 등록 상태를 확인하지 못했습니다: {error}")
+            self.startup_status.show()
         self._refresh_program_status()
 
         theme = self.config["appearance"]["theme"]
@@ -595,6 +683,41 @@ class SettingsPanel(QWidget):
         )
         self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
         self.navigation.setCurrentRow(0)
+        for key, checkbox in self.startup_checkboxes.items():
+            checkbox.toggled.connect(lambda checked, setting=key: self._on_startup_changed(setting, checked))
+        self.restart_connection_checkbox.toggled.connect(self._save)
+        self.startup_wait_spin.valueChanged.connect(self._save)
+        self.auto_start_wait_spin.valueChanged.connect(self._save)
+        self.program_extra_input.textChanged.connect(self._on_extra_arguments_changed)
+
+    def startup_settings(self):
+        return {**{key: checkbox.isChecked() for key, checkbox in self.startup_checkboxes.items()},
+                "restart_on_connection_failure": self.restart_connection_checkbox.isChecked(),
+                "emulator_wait_seconds": self.startup_wait_spin.value(),
+                "task_wait_seconds": self.auto_start_wait_spin.value()}
+
+    def _on_startup_changed(self, key, checked):
+        if key == "auto_start_tasks":
+            self.auto_start_wait_row.setVisible(checked)
+        if key == "launch_on_login":
+            try:
+                self.startup_registration.set_enabled(checked)
+            except (OSError, ValueError) as error:
+                checkbox = self.startup_checkboxes[key]
+                checkbox.blockSignals(True)
+                checkbox.setChecked(not checked)
+                checkbox.blockSignals(False)
+                self.startup_status.setText(f"시스템 시작 등록 변경 실패: {error}")
+                self.startup_status.show()
+                return
+        self._save()
+
+    def _on_extra_arguments_changed(self, _text):
+        self._save()
+        settings = self.program_settings()
+        if settings.get("arguments_error"):
+            self._show_program_test_status(settings["arguments_error"], False)
+        self.program_changed.emit(settings)
 
     def section_order(self):
         return [self.navigation.item(row).data(Qt.ItemDataRole.UserRole) for row in range(self.navigation.count())]
@@ -623,7 +746,9 @@ class SettingsPanel(QWidget):
         # Keep an explicit selection even when scrolling to it is clamped.
         self._syncing_navigation = True
         try:
-            self.detail_scroll.verticalScrollBar().setValue(section.y())
+            self.detail_scroll.verticalScrollBar().setValue(
+                max(0, section.y() - self.SECTION_TOP_INSET)
+            )
         finally:
             self._syncing_navigation = False
 
@@ -646,6 +771,7 @@ class SettingsPanel(QWidget):
     def _collect_config(self):
         return {
             "section_order": self.section_order(),
+            "startup": self.startup_settings(),
             "general": {
                 "minimize_enabled": self.minimize_checkbox.isChecked(),
                 "program_launch_task_enabled": (
@@ -664,6 +790,7 @@ class SettingsPanel(QWidget):
             "program": {
                 **normalize_program_config(self.config.get("program")),
                 "manual_path": self._confirmed_manual_path,
+                "extra_arguments": self.program_extra_input.text().strip(),
             },
             "appearance": {
                 "theme": self.theme_combo.currentData() or "light",
@@ -773,11 +900,12 @@ class SettingsPanel(QWidget):
         self.program_test_button.setEnabled(not busy and self._program_test_allowed)
         for control in (self.program_path_input, self.program_browse_button, self.program_apply_button):
             control.setEnabled(not busy)
+        self.program_extra_input.setEnabled(not busy)
         self.controller_combo.setEnabled(not busy and bool(self.controllers))
 
     def _program_test_context(self):
         return (self.program_path_input.text().strip(), self._confirmed_manual_path,
-                self.controller_settings().get("name"))
+                self.controller_settings().get("name"), self.program_extra_input.text())
 
     def _show_program_test_status(self, message, succeeded=None):
         self._set_status_label(self.program_active_status, message, succeeded)
@@ -989,6 +1117,9 @@ class SettingsPanel(QWidget):
 
     def _update_controller_details(self):
         controller = self.controller_combo.currentData()
+        adb = isinstance(controller, dict) and controller.get("type") == "Adb"
+        self.startup_wait_row.setVisible(adb)
+        self.restart_row.setVisible(adb)
         if not isinstance(controller, dict):
             self.controller_details.setText("선택할 수 있는 컨트롤러가 없습니다.")
             return
@@ -1062,4 +1193,13 @@ class SettingsPanel(QWidget):
             resolved_path = None
             config["launch_arguments"] = []
         config["resolved_path"] = str(resolved_path) if resolved_path else ""
+        config["adb_startup_wait_seconds"] = self.startup_wait_spin.value()
+        config["restart_on_connection_failure"] = self.restart_connection_checkbox.isChecked() and adb
+        try:
+            config["launch_arguments"] += parse_extra_arguments(self.program_extra_input.text())
+            if resolved_path and Path(resolved_path).suffix.casefold() == ".url" and config["launch_arguments"]:
+                raise ValueError("인터넷 바로가기(.url)에는 추가 인수를 사용할 수 없습니다.")
+        except (OSError, ValueError) as error:
+            config["arguments_error"] = f"추가 인수 형식을 확인하세요: {error}"
+            config["resolved_path"] = ""
         return config

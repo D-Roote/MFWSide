@@ -349,7 +349,8 @@ class MonitorCoordinator(QObject):
         return not self.busy and not self.service.needs_cleanup
 
     def _sync(self):
-        management_busy = self.window.settings_panel.management.busy
+        startup = getattr(self.window, "app_startup", None)
+        management_busy = self.window.settings_panel.management.busy or (startup is not None and startup.active)
         multi = getattr(self.window, "multi_panel", None)
         multi_active = multi is not None and not multi.ready_to_close
         status = "작업 실행 중 화면은 실행 컨트롤러로 캡처합니다. 대상 변경은 종료 후 가능합니다." if self.window.isRunning else self.status
@@ -549,7 +550,9 @@ class MonitorCoordinator(QObject):
         self._sync()
 
     def _request(self, kind, operation):
-        if self.busy or (self.window.settings_panel.management.busy and kind not in {"frame", "disconnect"}):
+        startup = getattr(self.window, "app_startup", None)
+        if (self.busy or (self.window.settings_panel.management.busy and kind not in {"frame", "disconnect"})
+                or (startup is not None and startup.active and kind != "disconnect")):
             return False
         worker = MonitorOperation(operation, self)
         worker.kind = kind

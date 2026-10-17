@@ -1,4 +1,13 @@
 /* 어두운 색상 스키마: 검정보다 군청과 남색 계열의 표면색을 사용한다. */
+QSpinBox#settingsSpinBox {
+    background-color: #142035;
+    color: #DCE6F2;
+    border-color: #30415E;
+}
+QSpinBox#settingsSpinBox:hover,
+QSpinBox#settingsSpinBox:focus {
+    border-color: #38BDF8;
+}
 QTreeWidget#storageUsageTree {
     background-color: #142035;
     color: #DCE6F2;
@@ -15,6 +24,19 @@ QTreeWidget#storageUsageTree QHeaderView::section {
 QWidget {
     background-color: transparent;
     color: #DCE6F2;
+}
+
+QMessageBox {
+    background-color: #172238;
+    color: #DCE6F2;
+}
+QMessageBox QLabel {
+    color: #DCE6F2;
+}
+QMessageBox QPushButton {
+    background-color: #243954;
+    color: #DCE6F2;
+    border-color: #30415E;
 }
 
 QMainWindow,
@@ -470,6 +492,10 @@ QLabel#settingsRowTitle {
 
 QFrame#settingsRow {
     border-top-color: #263650;
+}
+
+QFrame#settingsDivider {
+    background-color: #263650;
 }
 
 QLabel#controllerDetails {

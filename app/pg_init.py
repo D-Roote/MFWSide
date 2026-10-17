@@ -6,6 +6,7 @@ import re
 
 DEFAULT_PROGRAM_CONFIG = {
     "manual_path": "",
+    "extra_arguments": "",
     "startup_wait_seconds": 60,
     "recognition_timeout_seconds": 180,
     "poll_interval_seconds": 1.0,
@@ -20,6 +21,8 @@ def normalize_program_config(raw_config):
     manual_path = raw_config.get("manual_path")
     if isinstance(manual_path, str):
         config["manual_path"] = manual_path.strip()
+    if isinstance(raw_config.get("extra_arguments"), str):
+        config["extra_arguments"] = raw_config["extra_arguments"].strip()
 
     for key in ("startup_wait_seconds", "recognition_timeout_seconds"):
         value = raw_config.get(key)
@@ -58,8 +61,8 @@ def resolve_manual_program_path(manual_path, executable_name=None):
         return None
 
 
-def parse_manual_program_command(command):
-    """Parse a shortcut Target using Windows rules, never a command shell."""
+def split_windows_command(command):
+    """Split Windows quoting without invoking a command shell."""
     if not isinstance(command, str) or not command.strip():
         raise ValueError("실행 디바이스의 수동 경로를 입력하세요.")
     command = command.strip()
@@ -89,6 +92,18 @@ def parse_manual_program_command(command):
         kernel32.LocalFree(ctypes.cast(argv, ctypes.c_void_p))
     if not values:
         raise ValueError("실행 파일 경로가 없습니다.")
+    return values
+
+
+def parse_extra_arguments(value):
+    if not isinstance(value, str):
+        raise ValueError("추가 인수는 문자열이어야 합니다.")
+    return split_windows_command('"app" ' + value)[1:] if value.strip() else []
+
+
+def parse_manual_program_command(command):
+    """Parse a shortcut Target using Windows rules, never a command shell."""
+    values = split_windows_command(command)
     executable = Path(values[0]).expanduser()
     if not executable.is_file():
         raise ValueError("실행할 파일을 확인할 수 없습니다. 경로와 큰따옴표를 확인하세요.")

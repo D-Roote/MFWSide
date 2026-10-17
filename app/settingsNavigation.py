@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QAbstractItemView, QListWidget
 
 
 SETTINGS_SECTIONS = (
-    ("general", "일반"), ("program", "프로그램"),
+    ("general", "일반"), ("program", "시작 설정"),
     ("controller", "컨트롤러"), ("appearance", "외관"),
     ("management", "관리"),
 )
@@ -30,6 +30,9 @@ class SettingsNavigation(QListWidget):
         self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setDropIndicatorShown(True)
+        # The native insertion line is centered on the first item's top edge.
+        # Keep the entire stroke inside the viewport, including at index zero.
+        self.setSpacing(4)
         self.setAccessibleName("설정 목록")
         self.setToolTip("드래그하거나 Alt+위/아래 방향키로 설정 순서를 변경합니다.")
 

@@ -68,6 +68,8 @@ SDK 연결 전 원본 상태 저장·크기 조절, 비활성 일반 창 표시,
 
 ## 기본 인터페이스와 ADB 자동 실행
 
+설정/관리/시작 기능: `test_settings_navigation.py`는 내부/키보드 이동과 우측 카드/저장 복원, 맨 위 삽입선 및 카드 테두리의 여백을 검증한다. `test_storage_management.py`와 `test_management_ui.py`는 임시 파일의 용량·삭제·활성 세션/재파스/갱신 파일 보호·초기화 확인과 실패 복구를 검증한다. Windows 심볼릭 링크 생성 권한이 없으면 실제 링크 테스트만 건너뛰며 재파스 속성 모의 검증은 수행한다. `test_startup_settings.py`, `test_app_startup.py`, `test_startup_retry.py`는 모의 레지스트리·프로그램 실행, 시작 1회/취소/닫기 대기, 자동 시작 대기의 조건부 표시·저장·복원·로딩 후 순차 적용, 안내/구분선 배치, 추가 인수·ADB 대기, 컨트롤러 정리 후 정상 종료/연결 1회 재시도를 확인한다. 테스트가 실제 로그인 자동 실행을 등록하거나 게임·앱플레이어를 실행/종료하지 않도록 한다.
+
 `test_generic_program_discovery.py`는 게임별 EXE/경로 기본값 제거, 공식 창 제목·클래스 조건의 실행 중 EXE 조회, Steam 등록 위치/신·구 libraryfolders/manifest 조회와 모호성·경로 탈출 차단, 일반 EXE·인수와 기존 단일 EXE 폴더 호환, 잘못된 수동 경로의 자동 대체 금지, Steam 클라이언트와 게임 실행 구분 및 UI 검색 결과 재사용을 검증한다. Steam/게임 실행은 Popen 모의로 차단한다.
 
 `test_interface_startup.py`는 interface 누락 시 Win32 UI/리소스·작업 차단, ADB-only 선언, 잘못된 최상위 JSON을 확인한다. `test_adb_program_settings.py`는 Windows 바로가기 대상의 인수·공백·백슬래시·따옴표 파싱, 빈/잘못된/삭제된 경로에서 자동 검색 차단, 타입 복원 순서/저장, 긴 설명문 전체 표시 및 작은 창/양 테마의 가로 넘침을 검증한다.

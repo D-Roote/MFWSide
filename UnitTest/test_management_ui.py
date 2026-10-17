@@ -18,6 +18,12 @@ class ManagementUITests(unittest.TestCase):
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
         self.window = self.fixture.window
+        registration = patch.object(self.window.settings_panel.startup_registration, "is_enabled", return_value=False)
+        registration.start()
+        self.addCleanup(registration.stop)
+        unregister = patch.object(self.window.settings_panel.startup_registration, "set_enabled")
+        unregister.start()
+        self.addCleanup(unregister.stop)
         self.panel = self.window.settings_panel.management
         self.user = self.window.runtime.user_dir
         self.panel.configure(self.user, self.user / "sandbox", self.user / "sandbox/app",

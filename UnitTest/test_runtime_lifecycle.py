@@ -2124,8 +2124,9 @@ class UILifecycleTests(unittest.TestCase):
 
         self.assertEqual(log_view.focusPolicy(), Qt.FocusPolicy.NoFocus)
         self.assertNotIn("QCheckBox:focus", self.window._base_style_sheet)
-        self.assertNotIn("QPushButton:focus", self.window._base_style_sheet)
-        self.assertNotIn("QPushButton:focus", self.window._dark_style_sheet)
+        # Dialog-specific keyboard feedback is not a global button decoration.
+        for stylesheet in (self.window._base_style_sheet, self.window._dark_style_sheet):
+            self.assertNotRegex(stylesheet, r"(?:^|[},])\s*QPushButton:focus\b")
 
     def test_dynamic_typography_uses_shared_qss_selectors(self):
         task_widget = self.find_task_widget(self.window)
@@ -2885,7 +2886,7 @@ class UILifecycleTests(unittest.TestCase):
         self.assertEqual(panel.navigation.count(), 5)
         self.assertEqual(
             [panel.navigation.item(index).text() for index in range(5)],
-            ["일반", "프로그램", "컨트롤러", "외관", "관리"],
+            ["일반", "시작 설정", "컨트롤러", "외관", "관리"],
         )
         self.assertIs(panel.detail_scroll.widget(), panel.detail_contents)
         self.assertEqual(panel.layout().stretch(0), 2)
@@ -2954,10 +2955,10 @@ class UILifecycleTests(unittest.TestCase):
                 section_layout = row.parentWidget().layout()
                 last_widget = section_layout.itemAt(section_layout.count() - 1).widget()
                 expected_bottom = (
-                    0 if last_widget is row or row is panel.program_path_row else 12
+                    0 if last_widget is row else 12
                 )
                 expected_right = (
-                    12 if row.parentWidget() is general_section else 0
+                    12 if isinstance(row.layout().itemAtPosition(0, 1).widget(), QCheckBox) else 0
                 )
                 self.assertEqual(
                     (
@@ -3490,7 +3491,8 @@ class UILifecycleTests(unittest.TestCase):
                     self.assertEqual(panel.detail_layout.contentsMargins().right(), 6)
 
     def test_settings_without_overflow_highlights_first_card(self):
-        self.window.resize(1400, 1600)
+        content_height = self.window.settings_panel.detail_contents.sizeHint().height()
+        self.window.resize(1400, max(1600, content_height + 200))
         self.window.show()
         self.window.ui.mainPages.setCurrentWidget(self.window.ui.settingTab)
         self.app.processEvents()
@@ -3627,7 +3629,7 @@ class UILifecycleTests(unittest.TestCase):
         self.assertTrue(panel.program_active_status_container.isHidden())
         self.assertEqual(panel.program_apply_button.text(), "확인")
         row_margins = panel.program_path_row.layout().contentsMargins()
-        self.assertEqual((row_margins.top(), row_margins.bottom()), (12, 0))
+        self.assertEqual((row_margins.top(), row_margins.bottom()), (12, 12))
 
     def test_minimize_setting_is_saved_only_to_maa_config(self):
         self.window.ui.minimizeEnableBtn.setChecked(True)

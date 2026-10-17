@@ -38,6 +38,7 @@ from app.afterActions import (
 from app.afterActionUI import AfterActionPanel, AdbAppStopWorker
 from app.adbAppStop import AdbAppStopTarget, capture_adb_app_stop_target
 from app.storageManagement import reset_settings_files
+from app.appStartup import AppStartupCoordinator
 
 
 WINDOW_SIZE = [1200, 800]
@@ -1658,6 +1659,10 @@ class MainWindow(QMainWindow):
         self.multi_panel.manager.activity_changed.connect(self._multi_activity_changed)
         self.multi_panel.manager.wave_finished.connect(self._multi_wave_finished)
         self.multi_panel.shutdown_ready.connect(self._finish_pending_close)
+        self.app_startup = AppStartupCoordinator(self)
+        self._startup_queue_override = None
+        self.app_startup.activity_changed.connect(self._startup_activity_changed)
+        self.app_startup.shutdown_ready.connect(self._finish_pending_close)
         self.settings_panel.program_test_guard = self._can_test_program
         self.settings_panel.program_test_busy_changed.connect(self._program_test_activity_changed)
         self.settings_panel.program_test_shutdown_ready.connect(self._finish_pending_close)
@@ -1879,13 +1884,6 @@ class MainWindow(QMainWindow):
         if getattr(self, "_ui_state_ready", False) and not self.isMinimized():
             self._ui_save_timer.start()
 
-    def showEvent(self, event):
-        super().showEvent(event)
-        if self._ui_state_ready and self._first_ui_show:
-            self._first_ui_show = False
-            # Apply widths against the actual post-layout window size once.
-            self._restore_workspace_sizes()
-
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._schedule_ui_state_save()
@@ -1949,6 +1947,7 @@ class MainWindow(QMainWindow):
         return not (self.isRunning or self.worker is not None or self.stop_worker is not None
                     or self._completion_pending or self._closing or self._close_pending
                     or self.settings_panel.management.busy
+                    or (hasattr(self, "app_startup") and self.app_startup.active)
                     or not self.multi_panel.ready_to_close or self.monitor.pending_start is not None)
 
     def _can_manage_data(self):
@@ -1956,6 +1955,14 @@ class MainWindow(QMainWindow):
                 and not self.monitor.busy and not self.monitor.streaming)
 
     def _management_activity_changed(self, _busy):
+        self.check_start_button_state()
+        self.multi_panel.refresh()
+        self.monitor._sync()
+
+    def _startup_activity_changed(self, active):
+        self.set_options_locked(active or self.isRunning or self.multi_panel.manager.active)
+        if not active and not self.isRunning:
+            self.ui.workStartBtn.setText("작업 시작")
         self.check_start_button_state()
         self.multi_panel.refresh()
         self.monitor._sync()
@@ -1977,8 +1984,16 @@ class MainWindow(QMainWindow):
         if self.settings_panel.controllers:
             config["controller"] = SettingsStore.serialize_controller(self.settings_panel.controllers[0])
         try:
+            registration = self.settings_panel.startup_registration
+            was_registered = registration.is_enabled()
+            registration.set_enabled(False)  # Also remove an outdated command for this installation.
             reset_settings_files(self.runtime.user_dir, config)
-        except OSError as error:
+        except (OSError, ValueError) as error:
+            if locals().get("was_registered"):
+                try:
+                    registration.set_enabled(True)
+                except (OSError, ValueError) as restore_error:
+                    error = OSError(f"{error}; 시스템 시작 등록 복구 실패: {restore_error}")
             self.settings_panel.management.status.setText(f"설정 초기화 실패: {error}")
             return
         self._reset_settings_pending = True
@@ -2300,6 +2315,9 @@ class MainWindow(QMainWindow):
     def showEvent(self, event):
         super().showEvent(event)
         self.set_title_bar_theme(self._title_bar_theme)
+        if self._ui_state_ready and self._first_ui_show:
+            self._first_ui_show = False
+            self._restore_workspace_sizes()
 
     def append_log(self, message):
         current_time = datetime.now().strftime("%H:%M:%S")
@@ -2405,6 +2423,9 @@ class MainWindow(QMainWindow):
         return True
 
     def on_task_start(self):
+        if self.app_startup.active:
+            self.app_startup.cancel()
+            return
         if self.settings_panel.program_test_busy or self.settings_panel.management.busy:
             return
         if getattr(self.runtime, "interface_missing", False) is True:
@@ -2422,7 +2443,11 @@ class MainWindow(QMainWindow):
         self.append_log("작업을 시작합니다...")
         self.ui.workStartBtn.setEnabled(False)
 
-        execution_queue = self.build_execution_queue()
+        execution_queue = self._startup_queue_override
+        self._startup_queue_override = None
+        startup_request = execution_queue is not None
+        if execution_queue is None:
+            execution_queue = self.build_execution_queue()
         self._run_after_actions = self.after_actions.for_controller(self._after_action_controller_type()) if any(
             entry != PROGRAM_LAUNCH_ENTRY for entry, _override in execution_queue
         ) else None
@@ -2436,12 +2461,15 @@ class MainWindow(QMainWindow):
         if hasattr(self.ui, 'minimizeEnableBtn'):
             minimize_window = self.ui.minimizeEnableBtn.isChecked()
 
+        program_settings = self.settings_panel.program_settings()
+        if startup_request and self.app_startup.launch_identity:
+            program_settings["_startup_launcher"] = dict(self.app_startup.launch_identity)
         self.worker = RuntimeWorker(
             self.runtime,
             execution_queue,
             minimize_window,
             controller_settings=self.settings_panel.controller_settings(),
-            program_settings=self.settings_panel.program_settings(),
+            program_settings=program_settings,
             completion_actions=self._run_after_actions,
         )
 
@@ -2541,7 +2569,8 @@ class MainWindow(QMainWindow):
         self.multi_panel.shutdown()
         program_test_ready = self.settings_panel.shutdown_program_test()
         management_ready = self.settings_panel.management.shutdown()
-        if worker_running or stop_running or app_stop_running or not program_test_ready or not management_ready or not self.monitor.ready_to_close or not self.multi_panel.ready_to_close:
+        startup_ready = self.app_startup.shutdown()
+        if worker_running or stop_running or app_stop_running or not program_test_ready or not management_ready or not startup_ready or not self.monitor.ready_to_close or not self.multi_panel.ready_to_close:
             self._close_pending = True
             event.ignore()
             if worker_running:
@@ -2579,6 +2608,7 @@ class MainWindow(QMainWindow):
         if (not worker_running and not stop_running and self._adb_app_stop_worker is None
                 and not self.settings_panel.program_test_busy
                 and not self.settings_panel.management.busy
+                and self.app_startup.ready_to_close
                 and self.monitor.ready_to_close and self.multi_panel.ready_to_close):
             self._close_pending = False
             QTimer.singleShot(0, self.close)
@@ -3201,6 +3231,10 @@ class MainWindow(QMainWindow):
     def check_start_button_state(self):
         self.settings_panel.set_program_test_allowed(self._can_test_program())
         self.settings_panel.management.set_allowed(self._can_manage_data())
+        if self.app_startup.active and not self.isRunning and not self._closing:
+            self.ui.workStartBtn.setText("시작 동작 취소")
+            self.ui.workStartBtn.setEnabled(True)
+            return
         if (self.settings_panel.program_test_busy or self.settings_panel.management.busy) and not self.isRunning:
             self.ui.workStartBtn.setEnabled(False)
             return

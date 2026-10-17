@@ -9,7 +9,7 @@ from app.pg_init import build_program_launch_command
 from app.programLaunch import is_shortcut, launch_shortcut
 
 
-def launch_program_test(settings, cancellation_requested=None):
+def request_program_launch(settings, cancellation_requested=None, *, minimize=False):
     path = settings.get("resolved_path")
     if not isinstance(path, str) or not path.strip():
         raise ValueError("실행할 경로가 없습니다. 자동 검색 결과 또는 수동 경로를 확인하세요.")
@@ -20,7 +20,9 @@ def launch_program_test(settings, cancellation_requested=None):
     if is_shortcut(target):
         if cancellation_requested is not None and cancellation_requested():
             raise RuntimeError("실행 테스트가 취소되었습니다.")
-        process = launch_shortcut(target, arguments)
+        process = launch_shortcut(target, arguments, **({"minimize": True} if minimize else {}))
+        identity = ({"pid": process.pid, "path": str(process.executable_path)}
+                    if type(process.pid) is int and process.pid > 0 and process.executable_path else None)
         process.close()
     else:
         command, directory = build_program_launch_command(target, arguments)
@@ -28,9 +30,21 @@ def launch_program_test(settings, cancellation_requested=None):
             raise ValueError("폴더의 Steam 실행 정보를 확인할 수 없습니다. 실행 파일을 직접 지정하세요.")
         if cancellation_requested is not None and cancellation_requested():
             raise RuntimeError("실행 테스트가 취소되었습니다.")
-        subprocess.Popen(command, cwd=str(directory), shell=False, stdin=subprocess.DEVNULL,
+        options = {}
+        if minimize:
+            startup = subprocess.STARTUPINFO()
+            startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startup.wShowWindow = 7
+            options["startupinfo"] = startup
+        process = subprocess.Popen(command, cwd=str(directory), shell=False, stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), **options)
+        identity = {"pid": process.pid, "path": str(Path(command[0]).resolve())} if type(process.pid) is int and process.pid > 0 else None
+    return identity
+
+
+def launch_program_test(settings, cancellation_requested=None):
+    request_program_launch(settings, cancellation_requested)
     source = "수동" if settings.get("manual_path") else "자동"
     return f"{source} 경로 실행 요청을 보냈습니다. 대상 프로그램이 열렸는지 확인하세요."
 

@@ -1,4 +1,63 @@
 /* 설정 탭 전용 스타일 */
+QMessageBox {
+    background-color: #FFFFFF;
+    color: #334155;
+}
+QMessageBox QLabel {
+    background-color: transparent;
+    color: #334155;
+}
+QMessageBox QPushButton {
+    background-color: #EDF4FA;
+    color: #334155;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+    min-width: 60px;
+    padding: 6px 12px;
+}
+QMessageBox QPushButton:hover,
+QMessageBox QPushButton:focus {
+    border-color: #00AEEF;
+}
+QSpinBox#settingsSpinBox {
+    background-color: #FFFFFF;
+    color: #334155;
+    border: 1px solid #CBD5E0;
+    border-radius: 6px;
+    padding: 7px 10px;
+    min-width: 90px;
+    min-height: 20px;
+}
+QSpinBox#settingsSpinBox:hover,
+QSpinBox#settingsSpinBox:focus {
+    border-color: #00AEEF;
+}
+QSpinBox#settingsSpinBox::up-button {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 20px;
+    height: 18px;
+    border: none;
+    border-top-right-radius: 6px;
+}
+QSpinBox#settingsSpinBox::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 20px;
+    height: 18px;
+    border: none;
+    border-bottom-right-radius: 6px;
+}
+QSpinBox#settingsSpinBox::up-arrow {
+    image: url("maabaicons:actions/chevron-up.svg");
+    width: 12px;
+    height: 12px;
+}
+QSpinBox#settingsSpinBox::down-arrow {
+    image: url("maabaicons:actions/chevron-down.svg");
+    width: 12px;
+    height: 12px;
+}
 QTreeWidget#storageUsageTree {
     background-color: #F8FAFC;
     color: #334155;
@@ -13,6 +72,16 @@ QTreeWidget#storageUsageTree::item {
 QTreeWidget#storageUsageTree::item:selected {
     background-color: #DDEFF8;
     color: #075985;
+}
+QTreeWidget#storageUsageTree::indicator {
+    width: 16px;
+    height: 16px;
+}
+QTreeWidget#storageUsageTree::indicator:unchecked {
+    image: url("maabaicons:controls/checkbox-unchecked.svg");
+}
+QTreeWidget#storageUsageTree::indicator:checked {
+    image: url("maabaicons:controls/checkbox-checked.svg");
 }
 QTreeWidget#storageUsageTree QHeaderView::section {
     background-color: #EDF4FA;
@@ -132,6 +201,11 @@ QFrame#settingsRow {
     background-color: transparent;
     border: none;
     border-top: 1px solid #EEF2F7;
+}
+
+QFrame#settingsDivider {
+    background-color: #EEF2F7;
+    border: none;
 }
 
 QLabel#controllerDetails {

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import unittest
 
 import test_runtime_lifecycle as fixtures
-from PySide6.QtCore import QModelIndex, Qt
+from PySide6.QtCore import QModelIndex, QPoint, Qt
 from app.settingsNavigation import SETTINGS_SECTIONS, normalize_section_order
 
 
@@ -53,6 +53,33 @@ class SettingsNavigationTests(unittest.TestCase):
         event.source.return_value = self.window.ui.taskOptionList
         self.panel.navigation.dropEvent(event)
         event.ignore.assert_called_once()
+
+    def test_top_insert_line_has_room_after_moving_to_first(self):
+        self.window.show()
+        self.window.ui.mainPages.setCurrentWidget(self.window.ui.settingTab)
+        fixtures.QApplication.processEvents()
+        navigation = self.panel.navigation
+        navigation.model().moveRow(QModelIndex(), 3, QModelIndex(), 0)
+        fixtures.QApplication.processEvents()
+        top = navigation.visualItemRect(navigation.item(0)).top()
+        # A centered 2px stroke must have space on both sides of the top edge.
+        self.assertGreaterEqual(top, 2)
+        self.assertGreaterEqual(navigation.spacing(), 2)
+        self.assertLess(top, 10)
+
+    def test_selected_card_keeps_its_top_border_inside_viewport(self):
+        self.window.resize(self.window.minimumWidth(), 700)
+        self.window.show()
+        self.window.ui.mainPages.setCurrentWidget(self.window.ui.settingTab)
+        fixtures.QApplication.processEvents()
+        for row in (0, 1):
+            with self.subTest(row=row):
+                self.panel.navigation.setCurrentRow(row)
+                fixtures.QApplication.processEvents()
+                section = self.panel._sections[row]
+                top = section.mapTo(self.panel.detail_scroll.viewport(), QPoint()).y()
+                self.assertEqual(top, self.panel.SECTION_TOP_INSET)
+                self.assertEqual(self.panel.navigation.currentRow(), row)
 
 
 if __name__ == "__main__":
