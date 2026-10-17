@@ -105,7 +105,7 @@ class InstanceCard(QFrame):
         self.target_combo = PopupOnlyWheelComboBox()
         self.target_combo.setAccessibleName("인스턴스 연결 대상")
         self.target_combo.setObjectName("monitorComboBox")
-        self.target_combo.addItem("대상을 탐색하거나 ADB 주소를 입력하세요", None)
+        self.target_combo.addItem("대상을 탐색하거나 ADB 주소를 입력하세요.", None)
         self.adb_path = QLineEdit()
         self.adb_path.setPlaceholderText("ADB 경로 (자동 탐색 또는 직접 입력)")
         self.adb_path.setAccessibleName("인스턴스 ADB 경로")
@@ -167,7 +167,7 @@ class InstanceCard(QFrame):
         target = connection.get("target")
         self.targets = [deepcopy(target)] if target else []
         self.target_combo.clear()
-        self.target_combo.addItem("대상을 선택하세요", None)
+        self.target_combo.addItem("대상을 선택하세요.", None)
         if target:
             self.target_combo.addItem(target.get("label") or target.get("key"), target["key"])
             self.target_combo.setCurrentIndex(1)
@@ -198,7 +198,7 @@ class InstanceCard(QFrame):
         self.target_combo.blockSignals(True)
         self.target_combo.clear()
         self.targets = []
-        self.target_combo.addItem("대상을 선택하세요", None)
+        self.target_combo.addItem("대상을 선택하세요.", None)
         self.target_combo.blockSignals(False)
         self._show_adb_fields()
         self._configure()
@@ -416,7 +416,7 @@ class MultiExecutionPanel(QWidget):
             previous_emulator = card.emulator_combo.currentData() or {}
             card.target_combo.blockSignals(True)
             card.target_combo.clear()
-            card.target_combo.addItem("대상을 선택하세요", None)
+            card.target_combo.addItem("대상을 선택하세요.", None)
             card.targets = [deepcopy(connection["target"]) for connection in found]
             for target in card.targets:
                 card.target_combo.addItem(target["label"], target["key"])

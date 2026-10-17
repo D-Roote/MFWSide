@@ -1280,7 +1280,7 @@ class MonitorVerticalHandle(QSplitterHandle):
         super().__init__(orientation, parent)
         self._hovered = False
         self.setAccessibleName("화면과 로그 높이 조절")
-        self.setToolTip("드래그하여 펼쳐진 화면과 로그의 높이를 조절합니다")
+        self.setToolTip("드래그하여 펼쳐진 화면과 로그의 높이를 조절합니다.")
 
     def enterEvent(self, event):
         self._hovered = True

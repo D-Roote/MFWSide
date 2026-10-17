@@ -54,7 +54,7 @@ class ScreenImageCanvas(QWidget):
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         if self.image.isNull():
             painter.setPen(self.parentWidget().palette().text().color())
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "연결 확인 후 화면을 테스트하세요")
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "연결 확인 후 화면을 테스트하세요.")
         else:
             painter.drawImage(self.image_rect(), self.image)
         painter.end()
@@ -226,7 +226,7 @@ class ConnectionPanel(QWidget):
     def sync(self, presets, preset_name, targets, target_key, preferences, status, busy, running, connected):
         items = [
             (self.preset_combo, [(p.get("label") or p["name"], p["name"]) for p in presets], preset_name),
-            (self.target_combo, [("대상을 탐색하세요" if not targets else "연결 대상 선택", "")]
+            (self.target_combo, [("대상을 탐색하세요." if not targets else "연결 대상 선택", "")]
              + [(t.label, t.key) for t in targets], target_key),
         ]
         for combo, values, selection in items:
