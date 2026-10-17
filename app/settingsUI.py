@@ -666,7 +666,9 @@ class SettingsPanel(QWidget):
     def _browse_program_path(self):
         adb = self.controller_settings().get("type") == "Adb"
         selected, _ = QFileDialog.getOpenFileName(
-            self, "앱플레이어 실행 파일 선택" if adb else "프로그램 실행 파일 선택", "", "실행 파일 (*.exe)"
+            self, "앱플레이어 실행 파일 선택" if adb else "프로그램 실행 파일 선택", "",
+            "실행 파일 및 바로가기 (*.exe *.lnk *.url *.com *.cmd *.bat);;모든 파일 (*)",
+            options=QFileDialog.Option.DontResolveSymlinks,
         )
         if selected:
             self.program_path_input.setText(f'"{selected}"')
@@ -689,7 +691,7 @@ class SettingsPanel(QWidget):
             except (OSError, ValueError) as exception:
                 error = str(exception)
         elif manual_path and resolve_manual_program_path(manual_path) is None:
-            error = "실행 파일을 확인할 수 없습니다. EXE 경로와 인수를 확인하세요."
+            error = "실행 파일을 확인할 수 없습니다. 파일 경로와 인수를 확인하세요."
         if error:
             self._manual_path_error_active = True
             self.program_apply_button.setText("초기화")

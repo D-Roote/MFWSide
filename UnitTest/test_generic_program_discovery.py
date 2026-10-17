@@ -267,6 +267,16 @@ class GenericSettingsTests(unittest.TestCase):
         browse.assert_called_once()
         self.assertEqual(self.panel.program_path_input.text(), '"C:/Program/Game.exe"')
 
+    def test_browse_accepts_shortcuts_and_preserves_link_instead_of_dereferencing(self):
+        from PySide6.QtWidgets import QFileDialog
+        for extension in ("lnk", "url"):
+            with self.subTest(extension=extension), patch(
+                    "app.settingsUI.QFileDialog.getOpenFileName", return_value=(f"C:/Program/Game.{extension}", "")) as browse:
+                self.panel._browse_program_path()
+                self.assertIn(f"*.{extension}", browse.call_args.args[3])
+                self.assertEqual(browse.call_args.kwargs["options"], QFileDialog.Option.DontResolveSymlinks)
+                self.assertEqual(self.panel.program_path_input.text(), f'"C:/Program/Game.{extension}"')
+
     def test_snapshot_does_not_repeat_native_discovery(self):
         with patch("app.settingsUI.find_auto_program_executable", return_value=None) as auto:
             self.panel._refresh_program_status()

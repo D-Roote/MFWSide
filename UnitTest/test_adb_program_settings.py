@@ -35,12 +35,12 @@ class ShortcutTargetTests(unittest.TestCase):
             with self.subTest(command=command), self.assertRaises(ValueError):
                 parse_manual_program_command(command)
 
-    def test_directory_or_non_exe_is_not_a_launch_target(self):
+    def test_directory_is_not_a_launch_target_but_existing_files_have_no_extension_restriction(self):
         script = Path(self.directory.name) / "script.cmd"
         script.touch()
-        for path in (Path(self.directory.name), script):
-            with self.assertRaises(ValueError):
-                parse_manual_program_command(f'"{path}"')
+        with self.assertRaises(ValueError):
+            parse_manual_program_command(f'"{self.directory.name}"')
+        self.assertEqual(parse_manual_program_command(f'"{script}"'), (script.resolve(), []))
 
 
 class AdbProgramSettingsTests(unittest.TestCase):

@@ -13,6 +13,7 @@ from maa.define import MaaWin32InputMethodEnum, MaaWin32ScreencapMethodEnum
 from maa.toolkit import Toolkit
 
 from app.pg_init import resolve_manual_program_path
+from app.programLaunch import is_shortcut
 
 
 def supported_presets(interface, resource_config):
@@ -176,7 +177,10 @@ class MonitoringService:
                 manual_path = program.get("manual_path", "")
                 if path and manual_path:
                     resolved = resolve_manual_program_path(manual_path)
-                    if resolved is None or Path(path).resolve() != resolved:
+                    # A shortcut may start a launcher/URI which delegates to
+                    # another process. Keep the declared window/class filters,
+                    # not an impossible EXE-versus-shortcut path comparison.
+                    if resolved is None or (not is_shortcut(resolved) and Path(path).resolve() != resolved):
                         continue
                 detail = Path(path).name if path else "실행 파일 확인 권한 제한"
                 self.targets.append(ConnectionTarget(

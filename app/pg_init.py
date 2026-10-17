@@ -48,7 +48,7 @@ def resolve_manual_program_path(manual_path, executable_name=None):
             executables = [path for path in candidate.iterdir()
                            if path.is_file() and path.suffix.casefold() == ".exe"]
             return executables[0].resolve() if len(executables) == 1 else None
-        if candidate.is_file() and candidate.suffix.casefold() == ".exe":
+        if candidate.is_file():
             return candidate.resolve()  # Preserve previously saved unquoted file paths.
     except (OSError, ValueError):
         pass  # A command with arguments is not necessarily a valid filesystem path.
@@ -90,8 +90,8 @@ def parse_manual_program_command(command):
     if not values:
         raise ValueError("실행 파일 경로가 없습니다.")
     executable = Path(values[0]).expanduser()
-    if executable.suffix.casefold() != ".exe" or not executable.is_file():
-        raise ValueError("실행할 EXE 파일을 확인할 수 없습니다. 경로와 큰따옴표를 확인하세요.")
+    if not executable.is_file():
+        raise ValueError("실행할 파일을 확인할 수 없습니다. 경로와 큰따옴표를 확인하세요.")
     return executable.resolve(), values[1:]
 
 

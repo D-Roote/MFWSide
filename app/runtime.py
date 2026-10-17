@@ -20,6 +20,7 @@ from maa.toolkit import Toolkit
 from app.paths import PATHS
 from app.agentRuntime import AgentSession, normalize_agents
 from app.pg_init import build_program_launch_command
+from app.programLaunch import is_shortcut, launch_shortcut
 from app.adbStartup import (
     adb_controller_options, adb_target_descriptor, launch_adb_program,
     minimize_adb_window, prepare_adb_connection,
@@ -843,6 +844,16 @@ class AppRuntime:
             return False, "실행할 프로그램 경로가 확인되지 않았습니다."
         executable_path = Path(resolved_path).resolve()
         try:
+            if is_shortcut(executable_path):
+                if not executable_path.is_file():
+                    return False, f"실행 파일을 찾을 수 없습니다: {executable_path}"
+                window, _ = self._find_target_window(self.controller_config)
+                if window is not None:
+                    return True, "대상 프로그램 창이 이미 실행 중입니다."
+                process = launch_shortcut(executable_path, program_settings.get("launch_arguments"))
+                process.close()
+                self._program_started_for_session = True
+                return True, "바로가기 실행을 요청했습니다."
             launch_command, working_directory = build_program_launch_command(
                 executable_path, program_settings.get("launch_arguments")
             )

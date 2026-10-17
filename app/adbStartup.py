@@ -6,6 +6,7 @@ import time
 
 from maa.toolkit import Toolkit
 from app.pg_init import parse_manual_program_command
+from app.programLaunch import is_shortcut, launch_shortcut
 
 
 ADB_POST_PROCESS_WAIT_SECONDS = 60.0
@@ -95,6 +96,7 @@ def minimize_adb_window(runtime):
 def launch_adb_program(runtime, settings, cancellation_requested=None, minimize=False):
     runtime._program_started_for_session = False
     runtime._adb_minimized_windows = set()
+    shortcut_process = None
     try:
         executable, arguments = parse_manual_program_command((settings or {}).get("manual_path"))
         if cancellation_requested is not None and cancellation_requested():
@@ -105,14 +107,18 @@ def launch_adb_program(runtime, settings, cancellation_requested=None, minimize=
             startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startup.wShowWindow = 7  # SW_SHOWMINNOACTIVE, no foreground activation.
             options["startupinfo"] = startup
-        process = subprocess.Popen([str(executable), *arguments], cwd=str(executable.parent), shell=False,
-                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), **options)
-        if type(process.pid) is not int or process.pid <= 0:
+        if is_shortcut(executable):
+            process = shortcut_process = launch_shortcut(executable, arguments, minimize=minimize)
+        else:
+            process = subprocess.Popen([str(executable), *arguments], cwd=str(executable.parent), shell=False,
+                                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), **options)
+        if shortcut_process is None and (type(process.pid) is not int or process.pid <= 0):
             return False, "앱플레이어 실행 프로세스를 확인하지 못했습니다."
         if process.poll() not in (None, 0):
             return False, "앱플레이어 실행 프로세스가 비정상 종료되었습니다."
-        runtime._adb_launcher_pid, runtime._adb_launcher_path = process.pid, executable
+        runtime._adb_launcher_pid = process.pid
+        runtime._adb_launcher_path = process.executable_path if shortcut_process is not None else executable
         # A zero-exit launcher may legitimately hand off to another process.
         # Confirm the launched PID, wait for loading, then validate the actual
         # selected device through Controller.post_connection; do not guess a child.
@@ -138,3 +144,6 @@ def launch_adb_program(runtime, settings, cancellation_requested=None, minimize=
             time.sleep(min(0.1, deadline - now))
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         return False, f"앱플레이어 자동 실행에 실패했습니다: {error}"
+    finally:
+        if shortcut_process is not None:
+            shortcut_process.close()

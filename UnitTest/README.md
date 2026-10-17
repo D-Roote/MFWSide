@@ -8,6 +8,8 @@ Windows에서 가상환경을 준비한 뒤 저장소 루트에서 실행합니�
 
 게임 실행, Tasker 수명주기, 최소화, 작업 목록 및 설정 UI의 회귀를 검증합니다. 게임 실행·캡처·입력 API는 모의 객체로 대체하고 Qt는 offscreen 모드로 사용하므로 실제 게임을 실행하거나 조작하지 않습니다.
 
+`test_shortcut_launch.py`는 수동 파일 확장자 제한 해제, .lnk/.url의 Windows Shell 실행 인수·COM·핸들 수명, 핸들이 없는 성공, 실패·실제 PID/경로·Win32 중복 실행 방지·ADB 대기/취소·모니터 창 필터를 검증합니다. ShellExecuteEx와 모든 프로세스/창 API는 모의하며 실제 바로가기나 URL을 열지 않습니다.
+
 앱 진입점은 루트 `main.py`, 패키지/UI는 루트 `app/`입니다. `test_app_paths.py`는 외부 작업 디렉토리에서의 import/진입점, 기존 `assets/user`·리소스/OCR 모델 경로 보존, 패키지 내부 UI/아이콘, frozen EXE 옆 외부 데이터 경로 및 interface 기준 상대 bundle 경로를 검증합니다. frozen 경로는 모의 검증이며 실제 빌드/종료 도우미 검증은 아닙니다. 선택 native probe도 루트 패키지를 import하지만 기본 테스트에서 실제 창/SDK 컨트롤러 probe는 실행하지 않습니다.
 
 기본 실행기는 테스트 파일별로 Python 프로세스를 분리합니다. 각 프로세스의 PID와 `.cache/test_diagnostics/python_fault_PID.log`를 출력하고, Windows 오류/JIT 대화상자에서 대기하지 않도록 테스트 프로세스에만 오류 모드를 적용합니다. 비정상 종료·일반 실패·180초 초과는 실패로 보고하며 자동 재시도하지 않습니다. 실제 앱의 오류 처리와 레지스트리는 변경하지 않습니다.
