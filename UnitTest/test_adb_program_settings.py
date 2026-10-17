@@ -70,7 +70,7 @@ class AdbProgramSettingsTests(unittest.TestCase):
         )
         self.assertEqual(
             self.panel.program_path_input.placeholderText(),
-            "실행 파일 또는 실행 파일이 있는 폴더",
+            "실행 파일 또는 바로가기",
         )
         self.assertTrue(self.panel.program_auto_status.isEnabled())
 
@@ -96,7 +96,7 @@ class AdbProgramSettingsTests(unittest.TestCase):
         self.assertEqual(ADB_MANUAL_PATH_DESCRIPTION,
                          '실행 디바이스의 바로가기 생성 후, 우클릭-속성-바로 가기 탭 의 "대상"을 복사하여 사용합니다.')
         self.assertEqual(self.panel.program_path_input.placeholderText(),
-                         '"앱플레이어 실행 파일.exe" 실행 속성')
+                         '"파일 경로" 실행 인수')
         self.assertFalse(self.panel.program_active_status.property("pathValid"))
         self.assertNotIn("사용 경로:", self.panel.program_active_status.text())
 
@@ -179,7 +179,7 @@ class AdbProgramSettingsTests(unittest.TestCase):
                         controls = field.parentWidget()
                         self.assertEqual(self.window.minimumWidth(), minimum_width)
                         self.assertEqual(self.window.width(), width)
-                        self.assertGreater(field.width(), 260)
+                        self.assertGreaterEqual(field.width(), 180)
                         self.assertLessEqual(
                             label.heightForWidth(label.width()),
                             2 * label.fontMetrics().lineSpacing(),
@@ -210,7 +210,7 @@ class AdbProgramSettingsTests(unittest.TestCase):
                 self.assertEqual(self.panel.program_apply_button.text(), "초기화")
                 label = self.panel.program_path_row.description_label
                 self.assertEqual(self.window.minimumWidth(), minimum_width)
-                self.assertGreater(self.panel.program_path_input.width(), 260)
+                self.assertGreaterEqual(self.panel.program_path_input.width(), 180)
                 self.assertLessEqual(label.heightForWidth(label.width()), 2 * label.fontMetrics().lineSpacing())
                 self.assertEqual(self.panel.detail_scroll.horizontalScrollBar().maximum(), 0)
                 self.panel._apply_program_path()

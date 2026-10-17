@@ -163,7 +163,8 @@ QLineEdit#programPathInput:focus {
 }
 
 QPushButton#programBrowseButton,
-QPushButton#programApplyButton {
+QPushButton#programApplyButton,
+QPushButton#programTestButton {
     border: 1px solid transparent;
     min-height: 20px;
     padding: 7px 12px;

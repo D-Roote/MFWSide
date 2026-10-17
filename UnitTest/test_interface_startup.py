@@ -42,7 +42,7 @@ class InterfaceStartupTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     window.settings_panel.program_path_input.placeholderText(),
-                    "실행 파일 또는 실행 파일이 있는 폴더",
+                    "실행 파일 또는 바로가기",
                 )
                 self.assertFalse(window.ui.workStartBtn.isEnabled())
                 with patch.object(runtime, "initialize") as initialize:

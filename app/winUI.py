@@ -1656,6 +1656,9 @@ class MainWindow(QMainWindow):
         self.multi_panel.manager.activity_changed.connect(self._multi_activity_changed)
         self.multi_panel.manager.wave_finished.connect(self._multi_wave_finished)
         self.multi_panel.shutdown_ready.connect(self._finish_pending_close)
+        self.settings_panel.program_test_guard = self._can_test_program
+        self.settings_panel.program_test_busy_changed.connect(self._program_test_activity_changed)
+        self.settings_panel.program_test_shutdown_ready.connect(self._finish_pending_close)
         try:
             multi_saved = json.loads((self.runtime.user_dir / "config" / "user_config.json").read_text(encoding="utf-8"))
             self.multi_panel.manager.restore(multi_saved.get("multi_instances"))
@@ -1934,6 +1937,15 @@ class MainWindow(QMainWindow):
             self._refresh_after_action_summary()
         self.monitor._sync()
         self._finish_pending_close()
+
+    def _can_test_program(self):
+        return not (self.isRunning or self.worker is not None or self.stop_worker is not None
+                    or self._completion_pending or self._closing or self._close_pending
+                    or not self.multi_panel.ready_to_close or self.monitor.pending_start is not None)
+
+    def _program_test_activity_changed(self, _busy):
+        self.check_start_button_state()
+        self.multi_panel.refresh()
 
     def _multi_wave_finished(self, results, actions):
         if self._closing or self._completion_pending or not results or not all(result["succeeded"] for result in results):
@@ -2351,6 +2363,8 @@ class MainWindow(QMainWindow):
         return True
 
     def on_task_start(self):
+        if self.settings_panel.program_test_busy:
+            return
         if getattr(self.runtime, "interface_missing", False) is True:
             self.append_log("interface.json을 준비한 후 앱을 다시 실행하세요.")
             return
@@ -2483,7 +2497,8 @@ class MainWindow(QMainWindow):
             self._adb_app_stop_worker.requestInterruption()
         self.monitor.shutdown()
         self.multi_panel.shutdown()
-        if worker_running or stop_running or app_stop_running or not self.monitor.ready_to_close or not self.multi_panel.ready_to_close:
+        program_test_ready = self.settings_panel.shutdown_program_test()
+        if worker_running or stop_running or app_stop_running or not program_test_ready or not self.monitor.ready_to_close or not self.multi_panel.ready_to_close:
             self._close_pending = True
             event.ignore()
             if worker_running:
@@ -2519,6 +2534,7 @@ class MainWindow(QMainWindow):
         worker_running = self.worker is not None
         stop_running = self.stop_worker is not None
         if (not worker_running and not stop_running and self._adb_app_stop_worker is None
+                and not self.settings_panel.program_test_busy
                 and self.monitor.ready_to_close and self.multi_panel.ready_to_close):
             self._close_pending = False
             QTimer.singleShot(0, self.close)
@@ -3139,6 +3155,10 @@ class MainWindow(QMainWindow):
         self.on_user_config_changed()
 
     def check_start_button_state(self):
+        self.settings_panel.set_program_test_allowed(self._can_test_program())
+        if self.settings_panel.program_test_busy and not self.isRunning:
+            self.ui.workStartBtn.setEnabled(False)
+            return
         if getattr(self.runtime, "interface_missing", False) is True:
             self.ui.workStartBtn.setEnabled(False)
             return

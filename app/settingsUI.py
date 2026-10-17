@@ -2,7 +2,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QEasingCurve, QPropertyAnimation, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QEasingCurve, QPropertyAnimation, Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from app.runtime import WIN32_METHOD_DEFAULTS, WIN32_METHOD_PRIORITY
 from app.controls import PopupOnlyWheelComboBox
+from app.programTest import ProgramTestWorker
 from app.monitoring import normalize_connection_preferences, normalize_screen_preferences
 from app.pg_init import (
     DEFAULT_PROGRAM_CONFIG,
@@ -185,6 +186,8 @@ class SettingsPanel(QWidget):
     theme_changed = Signal(str)
     controller_changed = Signal(object)
     program_changed = Signal(object)
+    program_test_busy_changed = Signal(bool)
+    program_test_shutdown_ready = Signal()
 
     def __init__(
         self,
@@ -198,6 +201,10 @@ class SettingsPanel(QWidget):
         self.setObjectName("settingsPanel")
         self._syncing_navigation = False
         self._sections = []
+        self._program_test_worker = None
+        self._program_test_closing = False
+        self._program_test_allowed = True
+        self.program_test_guard = lambda: True
         self.controllers = self._filter_controllers(
             controllers, supported_controller_names
         )
@@ -314,13 +321,17 @@ class SettingsPanel(QWidget):
         self.program_path_input = QLineEdit()
         self.program_path_input.setObjectName("programPathInput")
         self.program_path_input.setPlaceholderText(
-            "실행 파일 또는 실행 파일이 있는 폴더"
+            "실행 파일 또는 바로가기"
         )
-        self.program_path_input.setMinimumWidth(260)
+        self.program_path_input.setMinimumWidth(180)
         self.program_browse_button = QPushButton("찾아보기")
         self.program_browse_button.setObjectName("programBrowseButton")
         self.program_apply_button = QPushButton("확인")
         self.program_apply_button.setObjectName("programApplyButton")
+        self.program_test_button = QPushButton("테스트")
+        self.program_test_button.setObjectName("programTestButton")
+        self.program_test_button.setToolTip("현재 자동 경로 또는 확인된 수동 경로로 프로그램 실행을 요청합니다. 작업은 시작하지 않습니다.")
+        self.program_test_button.setAccessibleName("프로그램 경로 실행 테스트")
 
         program_path_controls = QWidget()
         program_path_controls.setObjectName("programPathControls")
@@ -330,6 +341,7 @@ class SettingsPanel(QWidget):
         program_path_layout.addWidget(self.program_path_input, 1)
         program_path_layout.addWidget(self.program_browse_button)
         program_path_layout.addWidget(self.program_apply_button)
+        program_path_layout.addWidget(self.program_test_button)
         self.program_path_row = self._add_setting_row(
             program_layout,
             "수동 경로",
@@ -558,6 +570,7 @@ class SettingsPanel(QWidget):
         self.clear_log_checkbox.toggled.connect(self._on_clear_log_changed)
         self.program_browse_button.clicked.connect(self._browse_program_path)
         self.program_apply_button.clicked.connect(self._apply_program_path)
+        self.program_test_button.clicked.connect(self._test_program_path)
         self.controller_combo.currentIndexChanged.connect(
             self._on_controller_changed
         )
@@ -710,6 +723,76 @@ class SettingsPanel(QWidget):
         self._refresh_program_status(animate=True)
         self.program_changed.emit(self.program_settings())
 
+    @property
+    def program_test_busy(self):
+        return self._program_test_worker is not None
+
+    def set_program_test_allowed(self, allowed):
+        self._program_test_allowed = bool(allowed)
+        busy = self.program_test_busy or self._program_test_closing
+        self.program_test_button.setEnabled(not busy and self._program_test_allowed)
+        for control in (self.program_path_input, self.program_browse_button, self.program_apply_button):
+            control.setEnabled(not busy)
+        self.controller_combo.setEnabled(not busy and bool(self.controllers))
+
+    def _program_test_context(self):
+        return (self.program_path_input.text().strip(), self._confirmed_manual_path,
+                self.controller_settings().get("name"))
+
+    def _show_program_test_status(self, message, succeeded=None):
+        self._set_status_label(self.program_active_status, message, succeeded)
+        self._set_program_active_status_visible(True, animate=True)
+
+    def _test_program_path(self):
+        if self.program_test_busy or self._program_test_closing:
+            return
+        if not self._program_test_allowed or not self.program_test_guard():
+            self._show_program_test_status("작업과 대상 탐색이 끝난 뒤 실행 테스트를 사용하세요.", False)
+            return
+        if self.program_path_input.text().strip() != self._confirmed_manual_path:
+            self._show_program_test_status("수동 경로를 확인한 뒤 테스트하세요.", False)
+            return
+        settings = self.program_settings()
+        if not settings.get("resolved_path"):
+            self._show_program_test_status("실행할 경로가 없습니다. 자동 검색 결과 또는 수동 경로를 확인하세요.", False)
+            return
+        self._program_test_snapshot = self._program_test_context()
+        self._program_test_worker = worker = ProgramTestWorker(settings, self)
+        worker.finished.connect(self._on_program_test_finished)
+        self.set_program_test_allowed(self._program_test_allowed)
+        self._show_program_test_status("프로그램 실행을 요청하고 있습니다…")
+        self.program_test_busy_changed.emit(True)
+        try:
+            worker.start()
+        except RuntimeError as error:
+            self._program_test_worker = None
+            worker.deleteLater()
+            self.set_program_test_allowed(self._program_test_allowed)
+            self._show_program_test_status(f"실행 테스트 실패: {error}", False)
+            self.program_test_busy_changed.emit(False)
+
+    @Slot()
+    def _on_program_test_finished(self):
+        worker = self._program_test_worker
+        if worker is None:
+            return
+        self._program_test_worker = None
+        succeeded, message = worker.result
+        worker.deleteLater()
+        self.set_program_test_allowed(self._program_test_allowed)
+        if not self._program_test_closing and self._program_test_snapshot == self._program_test_context():
+            self._show_program_test_status(message, succeeded)
+        self.program_test_busy_changed.emit(False)
+        if self._program_test_closing:
+            self.program_test_shutdown_ready.emit()
+
+    def shutdown_program_test(self):
+        self._program_test_closing = True
+        self.set_program_test_allowed(False)
+        if self._program_test_worker is not None:
+            self._program_test_worker.requestInterruption()
+        return not self.program_test_busy
+
     @staticmethod
     def _refresh_status_style(label):
         label.style().unpolish(label)
@@ -786,8 +869,8 @@ class SettingsPanel(QWidget):
         self.program_path_row.description_label.setText(ADB_MANUAL_PATH_DESCRIPTION if adb else WIN32_MANUAL_PATH_DESCRIPTION)
         self._update_program_path_layout()
         self.program_path_input.setPlaceholderText(
-            '"앱플레이어 실행 파일.exe" 실행 속성'
-            if adb else "실행 파일 또는 실행 파일이 있는 폴더"
+            '"파일 경로" 실행 인수'
+            if adb else "실행 파일 또는 바로가기"
         )
         self.program_auto_status.setEnabled(not adb)
         auto_path = None if adb else find_auto_program_executable(config)

@@ -351,6 +351,9 @@ class MultiExecutionPanel(QWidget):
             self.manager.remove(session_id)
 
     def start_sessions(self, ids, mode="run", snapshot=None):
+        if self.window.settings_panel.program_test_busy:
+            self.report_status("프로그램 실행 테스트가 끝난 뒤 다시 시도하세요.")
+            return
         if self.window.isRunning or self.closing or self.window._completion_pending or self.discovery_worker is not None:
             self.report_status("기본 작업이나 대상 탐색이 끝난 뒤 다시 시도하세요.")
             return
@@ -385,6 +388,8 @@ class MultiExecutionPanel(QWidget):
                 break
 
     def discover(self, session_id=None):
+        if self.window.settings_panel.program_test_busy:
+            return
         if self.discovery_worker is not None or self.window.isRunning or self.closing or self.window._completion_pending:
             return
         if session_id is None and self.manager.active:
@@ -456,6 +461,7 @@ class MultiExecutionPanel(QWidget):
 
     def refresh(self):
         busy = self.window.isRunning or self.closing or self.window._completion_pending or self.discovery_worker is not None
+        busy = busy or self.window.settings_panel.program_test_busy
         self.start_all.setEnabled(not busy and bool(self.manager.sessions))
         self.stop_all.setEnabled(self.manager.active)
         self.add_button.setEnabled(not busy)
