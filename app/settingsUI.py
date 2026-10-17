@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from app.runtime import WIN32_METHOD_DEFAULTS, WIN32_METHOD_PRIORITY
 from app.controls import PopupOnlyWheelComboBox
 from app.programTest import ProgramTestWorker
+from app.settingsNavigation import SETTINGS_SECTIONS, SettingsNavigation, normalize_section_order
 from app.monitoring import normalize_connection_preferences, normalize_screen_preferences
 from app.pg_init import (
     DEFAULT_PROGRAM_CONFIG,
@@ -54,6 +55,7 @@ DEFAULT_MAA_CONFIG = {
     "appearance": {
         "theme": "light",
     },
+    "section_order": normalize_section_order(None),
 }
 
 
@@ -116,6 +118,7 @@ class SettingsStore:
             config["program"] = normalize_program_config(raw_config.get("program"))
             config["connection"] = normalize_connection_preferences(raw_config.get("connection"))
             config["monitor"] = normalize_screen_preferences(raw_config.get("monitor"))
+            config["section_order"] = normalize_section_order(raw_config.get("section_order"))
 
             raw_appearance = raw_config.get("appearance")
             if isinstance(raw_appearance, dict):
@@ -245,14 +248,15 @@ class SettingsPanel(QWidget):
         root_layout.setContentsMargins(16, 16, 6, 16)
         root_layout.setSpacing(16)
 
-        self.navigation = QListWidget()
+        self.navigation = SettingsNavigation()
         self.navigation.setObjectName("settingsNavigation")
         self.navigation.setMinimumWidth(170)
         self.navigation.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
-        for label in ("일반", "프로그램", "컨트롤러", "외관"):
+        for key, label in SETTINGS_SECTIONS:
             item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, key)
             self.navigation.addItem(item)
 
         self.detail_scroll = QScrollArea()
@@ -431,6 +435,14 @@ class SettingsPanel(QWidget):
                     margins.left(), margins.top(), margins.right(), 0
                 )
 
+        self._section_widgets = {key: section for (key, _label), section in zip(SETTINGS_SECTIONS, self._sections)}
+        for key, section in self._section_widgets.items():
+            section.setProperty("settingsSectionKey", key)
+        items = {item.data(Qt.ItemDataRole.UserRole): item
+                 for item in [self.navigation.takeItem(0) for _ in range(self.navigation.count())]}
+        for key in normalize_section_order(self.config.get("section_order")):
+            self.navigation.addItem(items[key])
+        self._reorder_section_widgets()
         self.detail_layout.addStretch(1)
         self.detail_scroll.setWidget(self.detail_contents)
 
@@ -558,6 +570,8 @@ class SettingsPanel(QWidget):
         return 0 if self.controllers else -1
 
     def _connect_controls(self):
+        self.navigation.model().rowsAboutToBeMoved.connect(self._begin_section_move)
+        self.navigation.model().rowsMoved.connect(self._finish_section_move)
         self.navigation.currentRowChanged.connect(self._scroll_to_section)
         self.detail_scroll.verticalScrollBar().valueChanged.connect(
             self._sync_navigation_to_scroll
@@ -576,6 +590,26 @@ class SettingsPanel(QWidget):
         )
         self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
         self.navigation.setCurrentRow(0)
+
+    def section_order(self):
+        return [self.navigation.item(row).data(Qt.ItemDataRole.UserRole) for row in range(self.navigation.count())]
+
+    def _reorder_section_widgets(self):
+        self._sections = [self._section_widgets[key] for key in self.section_order()]
+        for section in self._sections:
+            self.detail_layout.removeWidget(section)
+        for row, section in enumerate(self._sections):
+            self.detail_layout.insertWidget(row, section)
+        self.detail_layout.activate()
+
+    def _begin_section_move(self, *_args):
+        self._syncing_navigation = True
+
+    def _finish_section_move(self, *_args):
+        self._reorder_section_widgets()
+        self._syncing_navigation = False
+        self._scroll_to_section(self.navigation.currentRow())
+        self._save()
 
     def _scroll_to_section(self, row):
         if self._syncing_navigation or not 0 <= row < len(self._sections):
@@ -606,6 +640,7 @@ class SettingsPanel(QWidget):
 
     def _collect_config(self):
         return {
+            "section_order": self.section_order(),
             "general": {
                 "minimize_enabled": self.minimize_checkbox.isChecked(),
                 "program_launch_task_enabled": (
