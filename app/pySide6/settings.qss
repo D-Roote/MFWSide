@@ -1,4 +1,25 @@
 /* 설정 탭 전용 스타일 */
+QTreeWidget#storageUsageTree {
+    background-color: #F8FAFC;
+    color: #334155;
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+    padding: 4px;
+    outline: none;
+}
+QTreeWidget#storageUsageTree::item {
+    padding: 6px 4px;
+}
+QTreeWidget#storageUsageTree::item:selected {
+    background-color: #DDEFF8;
+    color: #075985;
+}
+QTreeWidget#storageUsageTree QHeaderView::section {
+    background-color: #EDF4FA;
+    color: #475569;
+    border: none;
+    padding: 6px;
+}
 QWidget#settingsPanel,
 QWidget#settingsDetailContents {
     background-color: transparent;

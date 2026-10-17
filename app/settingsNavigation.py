@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QAbstractItemView, QListWidget
 SETTINGS_SECTIONS = (
     ("general", "일반"), ("program", "프로그램"),
     ("controller", "컨트롤러"), ("appearance", "외관"),
+    ("management", "관리"),
 )
 
 

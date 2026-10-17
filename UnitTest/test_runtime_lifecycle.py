@@ -2867,8 +2867,9 @@ class UILifecycleTests(unittest.TestCase):
         self.window.show()
         self.window.ui.mainPages.setCurrentWidget(self.window.ui.settingTab)
         self.app.processEvents()
-        panel.navigation.setCurrentRow(3)
-        self.assertEqual(panel.navigation.currentRow(), 3)
+        last_row = panel.navigation.count() - 1
+        panel.navigation.setCurrentRow(last_row)
+        self.assertEqual(panel.navigation.currentRow(), last_row)
         scrollbar = panel.detail_scroll.verticalScrollBar()
         self.assertEqual(scrollbar.value(), scrollbar.maximum())
         self.assertGreater(scrollbar.maximum(), 0)
@@ -2881,10 +2882,10 @@ class UILifecycleTests(unittest.TestCase):
         self.window.ui.mainPages.setCurrentWidget(self.window.ui.settingTab)
         self.app.processEvents()
 
-        self.assertEqual(panel.navigation.count(), 4)
+        self.assertEqual(panel.navigation.count(), 5)
         self.assertEqual(
-            [panel.navigation.item(index).text() for index in range(4)],
-            ["일반", "프로그램", "컨트롤러", "외관"],
+            [panel.navigation.item(index).text() for index in range(5)],
+            ["일반", "프로그램", "컨트롤러", "외관", "관리"],
         )
         self.assertIs(panel.detail_scroll.widget(), panel.detail_contents)
         self.assertEqual(panel.layout().stretch(0), 2)

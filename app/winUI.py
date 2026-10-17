@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QAbstractItemView,
                                QButtonGroup, QCheckBox, QLabel, QLineEdit,
                                QListView, QStyledItemDelegate,
                                QFileDialog, QPushButton, QRadioButton, QStyle,
-                               QStyleOptionSlider)
+                               QStyleOptionSlider, QMessageBox)
 
 from app.runtime import AppRuntime, PROGRAM_LAUNCH_ENTRY
 from app.paths import PATHS
@@ -37,6 +37,7 @@ from app.afterActions import (
 )
 from app.afterActionUI import AfterActionPanel, AdbAppStopWorker
 from app.adbAppStop import AdbAppStopTarget, capture_adb_app_stop_target
+from app.storageManagement import reset_settings_files
 
 
 WINDOW_SIZE = [1200, 800]
@@ -1622,6 +1623,7 @@ class MainWindow(QMainWindow):
         self._adb_app_stop_final_actions = None
         self._deferred_system_action = ""
         self._closing = False
+        self._reset_settings_pending = False
         try:
             saved = json.loads((self.runtime.user_dir / "config" / "user_config.json").read_text(encoding="utf-8"))
             state = saved.get("ui_state")
@@ -1659,6 +1661,11 @@ class MainWindow(QMainWindow):
         self.settings_panel.program_test_guard = self._can_test_program
         self.settings_panel.program_test_busy_changed.connect(self._program_test_activity_changed)
         self.settings_panel.program_test_shutdown_ready.connect(self._finish_pending_close)
+        self.settings_panel.management.configure(self.runtime.user_dir, PATHS.root_dir, PATHS.app_dir,
+                                                 PATHS.resource_dir, self._can_manage_data)
+        self.settings_panel.management.busy_changed.connect(self._management_activity_changed)
+        self.settings_panel.management.shutdown_ready.connect(self._finish_pending_close)
+        self.settings_panel.management.reset_requested.connect(self._reset_all_settings)
         try:
             multi_saved = json.loads((self.runtime.user_dir / "config" / "user_config.json").read_text(encoding="utf-8"))
             self.multi_panel.manager.restore(multi_saved.get("multi_instances"))
@@ -1941,7 +1948,42 @@ class MainWindow(QMainWindow):
     def _can_test_program(self):
         return not (self.isRunning or self.worker is not None or self.stop_worker is not None
                     or self._completion_pending or self._closing or self._close_pending
+                    or self.settings_panel.management.busy
                     or not self.multi_panel.ready_to_close or self.monitor.pending_start is not None)
+
+    def _can_manage_data(self):
+        return (self._can_test_program() and not self.settings_panel.program_test_busy
+                and not self.monitor.busy and not self.monitor.streaming)
+
+    def _management_activity_changed(self, _busy):
+        self.check_start_button_state()
+        self.multi_panel.refresh()
+        self.monitor._sync()
+
+    def _reset_all_settings(self):
+        if not self._can_manage_data():
+            self.settings_panel.management.status.setText("작업·모니터링·관리 작업이 끝난 뒤 초기화하세요.")
+            return
+        if QMessageBox.question(self, "모든 설정 초기화",
+                                "작업 목록·세부 옵션·연결·경로·테마·창 배치·다중 실행 목록·완료 후 동작을 모두 초기화합니다.\n"
+                                "게임 리소스·OCR 모델·계정 백업은 보존합니다.\n초기화 후 앱이 종료되며, 다시 실행하면 기본값이 적용됩니다. 계속할까요?",
+                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            return
+        if not self._can_manage_data():
+            return
+        from app.settingsUI import DEFAULT_MAA_CONFIG, SettingsStore
+        config = deepcopy(DEFAULT_MAA_CONFIG)
+        if self.settings_panel.controllers:
+            config["controller"] = SettingsStore.serialize_controller(self.settings_panel.controllers[0])
+        try:
+            reset_settings_files(self.runtime.user_dir, config)
+        except OSError as error:
+            self.settings_panel.management.status.setText(f"설정 초기화 실패: {error}")
+            return
+        self._reset_settings_pending = True
+        self._ui_save_timer.stop()
+        self.close()
 
     def _program_test_activity_changed(self, _busy):
         self.check_start_button_state()
@@ -2363,7 +2405,7 @@ class MainWindow(QMainWindow):
         return True
 
     def on_task_start(self):
-        if self.settings_panel.program_test_busy:
+        if self.settings_panel.program_test_busy or self.settings_panel.management.busy:
             return
         if getattr(self.runtime, "interface_missing", False) is True:
             self.append_log("interface.json을 준비한 후 앱을 다시 실행하세요.")
@@ -2498,7 +2540,8 @@ class MainWindow(QMainWindow):
         self.monitor.shutdown()
         self.multi_panel.shutdown()
         program_test_ready = self.settings_panel.shutdown_program_test()
-        if worker_running or stop_running or app_stop_running or not program_test_ready or not self.monitor.ready_to_close or not self.multi_panel.ready_to_close:
+        management_ready = self.settings_panel.management.shutdown()
+        if worker_running or stop_running or app_stop_running or not program_test_ready or not management_ready or not self.monitor.ready_to_close or not self.multi_panel.ready_to_close:
             self._close_pending = True
             event.ignore()
             if worker_running:
@@ -2535,6 +2578,7 @@ class MainWindow(QMainWindow):
         stop_running = self.stop_worker is not None
         if (not worker_running and not stop_running and self._adb_app_stop_worker is None
                 and not self.settings_panel.program_test_busy
+                and not self.settings_panel.management.busy
                 and self.monitor.ready_to_close and self.multi_panel.ready_to_close):
             self._close_pending = False
             QTimer.singleShot(0, self.close)
@@ -3156,7 +3200,8 @@ class MainWindow(QMainWindow):
 
     def check_start_button_state(self):
         self.settings_panel.set_program_test_allowed(self._can_test_program())
-        if self.settings_panel.program_test_busy and not self.isRunning:
+        self.settings_panel.management.set_allowed(self._can_manage_data())
+        if (self.settings_panel.program_test_busy or self.settings_panel.management.busy) and not self.isRunning:
             self.ui.workStartBtn.setEnabled(False)
             return
         if getattr(self.runtime, "interface_missing", False) is True:
@@ -3269,6 +3314,8 @@ class MainWindow(QMainWindow):
         return execution_queue
 
     def save_user_config(self):
+        if getattr(self, "_reset_settings_pending", False):
+            return  # A pending close must not overwrite freshly reset files.
         config_dir = self.runtime.user_dir / "config"
         config_dir.mkdir(parents=True, exist_ok=True) # 폴더가 없으면 자동 생성
         config_path = config_dir / "user_config.json"

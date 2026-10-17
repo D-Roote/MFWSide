@@ -25,6 +25,7 @@ from app.runtime import WIN32_METHOD_DEFAULTS, WIN32_METHOD_PRIORITY
 from app.controls import PopupOnlyWheelComboBox
 from app.programTest import ProgramTestWorker
 from app.settingsNavigation import SETTINGS_SECTIONS, SettingsNavigation, normalize_section_order
+from app.managementUI import ManagementPanel
 from app.monitoring import normalize_connection_preferences, normalize_screen_preferences
 from app.pg_init import (
     DEFAULT_PROGRAM_CONFIG,
@@ -424,6 +425,10 @@ class SettingsPanel(QWidget):
             "애플리케이션 전체와 Windows 제목 표시줄의 색상을 변경합니다.",
             self.theme_combo,
         )
+
+        _management, management_layout = self._create_section("관리", "사용자 설정을 초기화하고 누적된 로그와 캐시를 정리합니다.")
+        self.management = ManagementPanel(self)
+        management_layout.addWidget(self.management)
 
         # The card owns its bottom inset; avoid doubling it on a final row.
         for section in self._sections:

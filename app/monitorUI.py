@@ -349,19 +349,20 @@ class MonitorCoordinator(QObject):
         return not self.busy and not self.service.needs_cleanup
 
     def _sync(self):
+        management_busy = self.window.settings_panel.management.busy
         multi = getattr(self.window, "multi_panel", None)
         multi_active = multi is not None and not multi.ready_to_close
         status = "작업 실행 중 화면은 실행 컨트롤러로 캡처합니다. 대상 변경은 종료 후 가능합니다." if self.window.isRunning else self.status
         for panel in self.panels:
             panel.sync(self.service.presets, self.preset_name, self.targets, self.target_key,
-                       self.preferences, status, self.busy or self.streaming, self.window.isRunning or multi_active,
+                       self.preferences, status, self.busy or self.streaming or management_busy, self.window.isRunning or multi_active,
                        self.service.controller is not None)
             panel.disconnect_button.setEnabled(
                 not self.shutting_down and self.pending_start is None
                 and (self.service.needs_cleanup or self.streaming)
                 and (not self.busy or self.worker.kind == "frame")
             )
-        available = (not self.shutting_down and self.pending_start is None
+        available = (not management_busy and not self.shutting_down and self.pending_start is None
                      and (self.window.isRunning or self.service.controller is not None))
         self.screen.sync(self.screen_preferences, self.streaming, self.busy, available)
 
@@ -548,7 +549,7 @@ class MonitorCoordinator(QObject):
         self._sync()
 
     def _request(self, kind, operation):
-        if self.busy:
+        if self.busy or (self.window.settings_panel.management.busy and kind not in {"frame", "disconnect"}):
             return False
         worker = MonitorOperation(operation, self)
         worker.kind = kind
