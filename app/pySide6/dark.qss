@@ -21,6 +21,9 @@ QTreeWidget#storageUsageTree QHeaderView::section {
     background-color: #1A2A42;
     color: #A8BED7;
 }
+QFrame#storageHeaderScrollCorner {
+    background-color: #1A2A42;
+}
 QWidget {
     background-color: transparent;
     color: #DCE6F2;

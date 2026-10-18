@@ -1,11 +1,12 @@
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 import unittest
 
 import test_runtime_lifecycle as fixtures
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QMessageBox
+from app.storageManagement import StorageGroup, StorageUsage
 
 
 class ManagementUITests(unittest.TestCase):
@@ -60,11 +61,19 @@ class ManagementUITests(unittest.TestCase):
         directory.mkdir()
         log = directory / "old.log"
         log.write_text("example")
+        other_directory = self.user / "archive"
+        other_directory.mkdir()
+        other_log = other_directory / "keep.log"
+        other_log.write_text("a larger log which was not selected")
         self.panel.scan()
         self.wait_worker()
-        for index, usage in enumerate(self.panel.usages):
-            if usage.group.key == "debug":
-                self.panel.tree.topLevelItem(index).setCheckState(0, Qt.CheckState.Checked)
+        self.panel.tree.sortItems(0, Qt.SortOrder.AscendingOrder)
+        for row in range(self.panel.tree.topLevelItemCount()):
+            item = self.panel.tree.topLevelItem(row)
+            if item.usage.group.key == "debug":
+                item.setCheckState(0, Qt.CheckState.Checked)
+        self.panel.tree.sortItems(1, Qt.SortOrder.DescendingOrder)
+        self.assertEqual([usage.group.key for usage in self.panel._selected()], ["debug"])
         with patch("app.managementUI.QMessageBox.question", return_value=QMessageBox.StandardButton.No):
             self.panel.delete_selected()
         self.assertTrue(log.exists())
@@ -72,8 +81,149 @@ class ManagementUITests(unittest.TestCase):
             self.panel.delete_selected()
         self.wait_worker()
         self.assertFalse(log.exists())
+        self.assertTrue(other_log.exists())
         self.assertTrue((self.user / "config/user_config.json").is_file())
         self.assertIn("삭제 완료", self.panel.status.text())
+
+    def usage(self, key, label, size, removable, count=1, errors=None):
+        return StorageUsage(StorageGroup(key, label, self.user, self.user / key),
+                            bytes=size, removable_bytes=removable, files=count,
+                            removable_files=count if removable else 0, errors=errors or [])
+
+    def publish_inventory(self, usages):
+        worker = MagicMock(error="", usages=None, result=usages)
+        self.panel.worker = worker
+        self.panel._finished()
+
+    def show_management(self):
+        self.window.resize(self.window.minimumWidth(), 820)
+        self.window.show()
+        self.window.ui.mainPages.setCurrentWidget(self.window.ui.settingTab)
+        panel = self.window.settings_panel
+        panel.navigation.setCurrentRow(panel.section_order().index("management"))
+        fixtures.QTest.qWait(20)
+
+    def test_inventory_hides_zero_cleanup_sizes_but_keeps_access_warnings(self):
+        protected = self.usage("protected", "Protected", 500, 0)
+        empty = self.usage("empty", "Empty", 0, 0, errors=["denied"])
+        removable = self.usage("logs", "Logs", 800, 300)
+        self.publish_inventory([protected, empty, removable])
+        self.assertEqual(self.panel.usages, [removable])
+        self.assertEqual(self.panel.tree.topLevelItemCount(), 1)
+        self.assertIs(self.panel.tree.topLevelItem(0).usage, removable)
+        self.assertIn("1개 폴더는 접근 제한", self.panel.status.text())
+        self.publish_inventory([protected, empty])
+        self.assertEqual(self.panel.tree.topLevelItemCount(), 0)
+        self.assertFalse(self.panel.select_all_button.isEnabled())
+        self.assertFalse(self.panel.delete_button.isEnabled())
+        self.assertIn("정리 가능한 폴더가 없습니다.", self.panel.status.text())
+
+    def test_default_descending_size_and_clickable_numeric_column_sorting(self):
+        usages = [self.usage("a", "Alpha", 2048, 2048, 2),
+                  self.usage("b", "Zulu", 900, 900, 10),
+                  self.usage("c", "Middle", 1024 * 1024, 1024, 1)]
+        self.publish_inventory(usages)
+        self.show_management()
+        tree = self.panel.tree
+        header = tree.header()
+        self.assertEqual(tree.sortColumn(), 2)
+        self.assertEqual(header.sortIndicatorOrder(), Qt.SortOrder.DescendingOrder)
+        self.assertEqual([tree.topLevelItem(i).usage.removable_bytes for i in range(3)], [2048, 1024, 900])
+        keys = (lambda usage: usage.group.label.casefold(), lambda usage: usage.bytes,
+                lambda usage: usage.removable_bytes, lambda usage: usage.files)
+        for column, key in enumerate(keys):
+            with self.subTest(column=column):
+                tree.sortItems(column, Qt.SortOrder.DescendingOrder)
+                point = QPoint(header.sectionViewportPosition(column) + header.sectionSize(column) // 2,
+                               header.height() // 2)
+                fixtures.QTest.mouseClick(header.viewport(), Qt.MouseButton.LeftButton, pos=point)
+                self.assertEqual(header.sortIndicatorOrder(), Qt.SortOrder.AscendingOrder)
+                self.assertEqual([tree.topLevelItem(i).usage for i in range(3)], sorted(usages, key=key))
+                fixtures.QTest.mouseClick(header.viewport(), Qt.MouseButton.LeftButton, pos=point)
+                self.assertEqual(header.sortIndicatorOrder(), Qt.SortOrder.DescendingOrder)
+                self.assertEqual([tree.topLevelItem(i).usage for i in range(3)], sorted(usages, key=key, reverse=True))
+
+    def test_select_all_toggle_and_execution_guard(self):
+        self.assertFalse(self.panel.select_all_button.isEnabled())
+        self.publish_inventory([self.usage("a", "A", 2, 2), self.usage("b", "B", 3, 3)])
+        self.panel.select_all_button.click()
+        self.assertEqual(len(self.panel._selected()), 2)
+        self.assertEqual(self.panel.select_all_button.text(), "모두 해제")
+        self.assertTrue(self.panel.delete_button.isEnabled())
+        self.panel.set_allowed(False)
+        self.assertFalse(self.panel.select_all_button.isEnabled())
+        self.panel._toggle_select_all()
+        self.assertEqual(len(self.panel._selected()), 2)
+        self.panel.set_allowed(True)
+        self.panel.select_all_button.click()
+        self.assertEqual(self.panel._selected(), [])
+        self.assertEqual(self.panel.select_all_button.text(), "모두 선택")
+        self.assertFalse(self.panel.delete_button.isEnabled())
+
+    def test_refresh_preserves_sort_direction_and_clears_selections(self):
+        usages = [self.usage("a", "A", 20, 20), self.usage("b", "B", 30, 30)]
+        self.publish_inventory(usages)
+        self.panel.tree.sortItems(1, Qt.SortOrder.AscendingOrder)
+        self.panel.select_all_button.click()
+        self.publish_inventory(usages)
+        self.assertEqual(self.panel.tree.sortColumn(), 1)
+        self.assertEqual(self.panel.tree.header().sortIndicatorOrder(), Qt.SortOrder.AscendingOrder)
+        self.assertEqual(self.panel._selected(), [])
+        self.assertEqual(self.panel.select_all_button.text(), "모두 선택")
+
+    def test_scrollbar_is_rounded_and_only_spans_the_body_in_both_themes(self):
+        self.publish_inventory([self.usage(str(i), f"Log {i}", 100 + i, 100 + i) for i in range(30)])
+        self.show_management()
+        settings = self.window.settings_panel
+        tree = self.panel.tree
+        bar = tree.verticalScrollBar()
+        for theme in ("light", "dark"):
+            with self.subTest(theme=theme):
+                settings.theme_combo.setCurrentIndex(settings.theme_combo.findData(theme))
+                settings.navigation.setCurrentRow(settings.section_order().index("management"))
+                fixtures.QTest.qWait(20)
+                self.assertGreater(bar.maximum(), 0)
+                self.assertEqual(bar.mapTo(tree, QPoint()).y(), tree.viewport().geometry().top())
+                self.assertEqual(bar.mapTo(tree, QPoint(0, bar.height())).y(), tree.viewport().geometry().bottom() + 1)
+                header_geometry = tree.header().geometry()
+                outer_value = settings.detail_scroll.verticalScrollBar().value()
+                bar.setValue(bar.maximum() // 2)
+                self.assertEqual(tree.header().geometry(), header_geometry)
+                self.assertEqual(settings.detail_scroll.verticalScrollBar().value(), outer_value)
+                paint_filter = bar._rounded_paint_filter
+                surface = paint_filter._surface_color()
+                self.assertEqual(surface.name(), "#142035" if theme == "dark" else "#f8fafc")
+                image = bar.grab().toImage()
+                slider = paint_filter._slider_rect()
+                corner = image.pixelColor(slider.left(), slider.top())
+                handle = paint_filter._handle_color()
+                # Antialiasing blends the rounded cap into the background;
+                # it must not be the solid handle-colored square corner.
+                self.assertNotEqual(corner, handle)
+                distance = lambda first, second: sum(abs(a - b) for a, b in zip(first.getRgb()[:3], second.getRgb()[:3]))
+                self.assertLess(distance(corner, surface), distance(corner, handle))
+                self.assertEqual(image.pixelColor(slider.center()), paint_filter._handle_color())
+                self.assertEqual(tree.horizontalScrollBar().maximum(), 0)
+                self.assertEqual(settings.detail_scroll.horizontalScrollBar().maximum(), 0)
+
+    def test_scrollbar_tracks_header_height_changes(self):
+        self.publish_inventory([self.usage(str(i), f"Log {i}", 100 + i, 100 + i) for i in range(30)])
+        self.show_management()
+        tree = self.panel.tree
+        tree.header().setFixedHeight(tree.header().height() + 10)
+        fixtures.QTest.qWait(20)
+        self.assertEqual(tree.verticalScrollBar().mapTo(tree, QPoint()).y(), tree.viewport().geometry().top())
+
+    def test_reset_is_a_separate_setting_row_and_notice_is_project_neutral(self):
+        row = self.panel.reset_row
+        self.assertEqual(row.objectName(), "settingsRow")
+        self.assertEqual(row.title_label.text(), "모든 설정 초기화")
+        self.assertIn("초기화 후 앱이 종료", row.description_label.text())
+        self.assertIs(row.layout().itemAtPosition(0, 1).widget(), self.panel.reset_button)
+        self.assertIs(row.layout().itemAtPosition(1, 1).widget(), self.panel.reset_button)
+        self.assertEqual(row.layout().contentsMargins().top(), 12)
+        self.assertEqual(row.layout().contentsMargins().bottom(), 0)
+        self.assertFalse(any("계정 백업" in label.text() for label in self.panel.findChildren(fixtures.QLabel)))
 
     def test_reset_cancel_does_not_change_config(self):
         path = self.user / "config/user_config.json"

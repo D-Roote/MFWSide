@@ -409,11 +409,12 @@ class CenteredOptionDelegate(QStyledItemDelegate):
 class RoundedScrollBarPaintFilter(QObject):
     """Paint a pill-shaped handle because narrow Qt handles ignore QSS radius."""
 
-    def __init__(self, scroll_bar, contextual=False, popup=False):
+    def __init__(self, scroll_bar, contextual=False, popup=False, surface_colors=None):
         super().__init__(scroll_bar)
         self.scroll_bar = scroll_bar
         self.contextual = bool(contextual)
         self.popup = bool(popup)
+        self.surface_colors = surface_colors
 
     def eventFilter(self, watched, event):
         if watched is self.scroll_bar and event.type() == QEvent.Type.Paint:
@@ -430,6 +431,8 @@ class RoundedScrollBarPaintFilter(QObject):
         return False
 
     def _surface_color(self):
+        if self.surface_colors is not None:
+            return QColor(self.surface_colors[1 if self._is_dark_theme() else 0])
         if self.popup:
             return QColor("#1E2D46" if self._is_dark_theme() else "#FFFFFF")
         if self.contextual:
@@ -477,10 +480,10 @@ class RoundedScrollBarPaintFilter(QObject):
         painter.end()
 
 
-def setup_rounded_vertical_scrollbar(scroll_area, contextual=False, popup=False):
+def setup_rounded_vertical_scrollbar(scroll_area, contextual=False, popup=False, surface_colors=None):
     scroll_bar = scroll_area.verticalScrollBar()
     scroll_bar._rounded_paint_filter = RoundedScrollBarPaintFilter(
-        scroll_bar, contextual=contextual, popup=popup
+        scroll_bar, contextual=contextual, popup=popup, surface_colors=surface_colors
     )
     scroll_bar.installEventFilter(scroll_bar._rounded_paint_filter)
 
@@ -1691,6 +1694,8 @@ class MainWindow(QMainWindow):
         self.monitor.shutdown_ready.connect(self._finish_pending_close)
         self.monitor.preset_changed.connect(self._refresh_after_action_summary)
         setup_rounded_vertical_scrollbar(self.settings_panel.detail_scroll)
+        setup_rounded_vertical_scrollbar(self.settings_panel.management.tree,
+                                        surface_colors=("#F8FAFC", "#142035"))
         self.setup_connections()
 
         self._restore_monitor_order()

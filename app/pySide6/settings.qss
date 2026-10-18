@@ -89,6 +89,11 @@ QTreeWidget#storageUsageTree QHeaderView::section {
     border: none;
     padding: 6px;
 }
+
+QFrame#storageHeaderScrollCorner {
+    background-color: #EDF4FA;
+    border: none;
+}
 QWidget#settingsPanel,
 QWidget#settingsDetailContents {
     background-color: transparent;
