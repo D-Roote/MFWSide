@@ -118,6 +118,10 @@ class StartupSettingsUITests(unittest.TestCase):
 
     def test_auto_task_wait_row_is_always_visible_and_restores_saved_value(self):
         self.assertFalse(self.panel.auto_start_wait_row.isHidden())
+        description = self.panel.auto_start_wait_row.description_label.text()
+        self.assertNotIn("0초는 즉시 시작", description)
+        self.assertIn("최대 3600초", description)
+        self.assertEqual(self.panel.auto_start_wait_spin.maximum(), 3600)
         self.panel.startup_checkboxes["auto_start_tasks"].setChecked(True)
         self.assertFalse(self.panel.auto_start_wait_row.isHidden())
         self.panel.auto_start_wait_spin.setValue(15)

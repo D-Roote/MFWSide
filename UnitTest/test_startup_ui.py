@@ -2,7 +2,8 @@
 import unittest
 
 import test_runtime_lifecycle as fixtures
-from PySide6.QtCore import QPoint
+from PySide6.QtCore import QPoint, QRectF
+from PySide6.QtWidgets import QLabel
 from app.startupUI import AppStartupDialog
 
 
@@ -38,6 +39,13 @@ class StartupDialogUITests(unittest.TestCase):
         self.dialog.set_remaining(59, total_seconds=999)
         self.assertEqual(self.dialog.countdown.maximum, 999)
         self.assertEqual(self.dialog.countdown.value_label.text(), "59")
+
+    def test_number_is_centered_in_ring_with_unit_below_and_no_footer_note(self):
+        dial = self.dialog.countdown
+        center = QRectF(5, 5, 174, 174).center()
+        self.assertEqual(QRectF(dial.value_label.geometry()).center(), center)
+        self.assertGreaterEqual(dial.unit_label.y(), 184)
+        self.assertIsNone(self.dialog.findChild(QLabel, "startupDialogNote"))
 
     def test_dialog_is_centered_or_clamped_to_its_screen(self):
         self.dialog.set_remaining(30)

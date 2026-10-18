@@ -9,15 +9,15 @@ class CountdownDial(QWidget):
         super().__init__(parent)
         self.maximum = 1
         self.value = 0
-        self.setFixedSize(184, 184)
+        self.setFixedSize(184, 214)
         self.value_label = QLabel("0", self)
         self.value_label.setObjectName("startupCountdownValue")
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.value_label.setGeometry(10, 33, 164, 90)
+        self.value_label.setGeometry(10, 47, 164, 90)
         self.unit_label = QLabel("초", self)
         self.unit_label.setObjectName("startupCountdownUnit")
         self.unit_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.unit_label.setGeometry(0, 118, 184, 26)
+        self.unit_label.setGeometry(0, 190, 184, 24)
         self.setAccessibleName("자동 시작까지 남은 초")
 
     def set_value(self, value, maximum):
@@ -88,11 +88,6 @@ class AppStartupDialog(QDialog):
         countdown.addWidget(self.countdown)
         countdown.addStretch(1)
         layout.addLayout(countdown)
-        self.note = QLabel("자동 시작 중에는 이 창에서만 제어할 수 있습니다.")
-        self.note.setObjectName("startupDialogNote")
-        self.note.setWordWrap(True)
-        self.note.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.note)
         layout.addSpacing(6)
         buttons = QHBoxLayout()
         buttons.setSpacing(10)
@@ -136,7 +131,6 @@ class AppStartupDialog(QDialog):
     def set_cancelling(self):
         self.title_label.setText("자동 시작 취소 중")
         self.description.setText("실행 요청이 정리될 때까지 잠시 기다려 주세요.")
-        self.note.setText("이미 실행한 대상 프로그램은 종료하지 않습니다.")
         self.cancel_button.setEnabled(False)
         self.start_button.setEnabled(False)
         self.countdown.set_pending("취소", "정리 중")

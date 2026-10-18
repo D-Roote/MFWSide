@@ -9,9 +9,6 @@ QLabel#startupDialogTitle, QLabel#startupCountdownValue {
 QLabel#startupDialogDescription, QLabel#startupCountdownUnit {
     color: #B2C3D7;
 }
-QLabel#startupDialogNote {
-    color: #91A8C0;
-}
 QPushButton#startupCancelButton {
     background-color: #223750;
     color: #D8E6F4;

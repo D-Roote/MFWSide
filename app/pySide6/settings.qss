@@ -21,10 +21,6 @@ QLabel#startupCountdownValue {
     font-size: 60px;
     font-weight: bold;
 }
-QLabel#startupDialogNote {
-    color: #71849A;
-    font-size: 12px;
-}
 QPushButton#startupCancelButton, QPushButton#startupNowButton {
     min-height: 24px;
     padding: 8px 16px;

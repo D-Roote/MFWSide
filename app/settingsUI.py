@@ -354,7 +354,7 @@ class SettingsPanel(QWidget):
                 self.auto_start_wait_row = self._add_setting_row(
                     program_layout,
                     "자동 시작 대기 시간",
-                    "작업을 자동 시작하기 전 기다릴 시간입니다. 0초는 즉시 시작합니다.",
+                    "작업 시작 전 대기 시간을 설정합니다. 최대 3600초까지 지정할 수 있습니다.",
                     self.auto_start_wait_spin,
                 )
                 self.auto_start_wait_spin.setAccessibleName("작업 자동 시작 대기 시간")
