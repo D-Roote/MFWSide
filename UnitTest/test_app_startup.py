@@ -203,10 +203,12 @@ class AppStartupTests(unittest.TestCase):
         self.assertTrue(self.startup.progress_timer.isActive())
         with patch.object(self.startup.timer, "remainingTime", return_value=65000):
             self.startup._update_dialog()
-        self.assertEqual([dial.value_label.text() for dial in dialog.dials], ["00", "01", "05"])
+        self.assertEqual(dialog.countdown.value_label.text(), "65")
+        self.assertEqual(dialog.countdown.maximum, 65)
         with patch.object(self.startup.timer, "remainingTime", return_value=1999):
             self.startup._update_dialog()
-        self.assertEqual([dial.value_label.text() for dial in dialog.dials], ["00", "00", "02"])
+        self.assertEqual(dialog.countdown.value_label.text(), "2")
+        self.assertEqual(dialog.countdown.maximum, 65)
 
     def test_popup_start_now_runs_once_and_releases_modality_before_start(self):
         self.enable("auto_start_tasks")

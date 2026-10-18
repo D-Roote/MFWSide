@@ -18,7 +18,7 @@ QLabel#startupDialogDescription, QLabel#startupCountdownUnit {
 }
 QLabel#startupCountdownValue {
     color: #19304D;
-    font-size: 46px;
+    font-size: 60px;
     font-weight: bold;
 }
 QLabel#startupDialogNote {

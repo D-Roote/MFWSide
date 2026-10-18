@@ -90,7 +90,9 @@ class AppStartupCoordinator(QObject):
     def _update_dialog(self):
         if self.dialog is not None and self._wait_phase is not None and not self.cancelled:
             milliseconds = max(0, self.timer.remainingTime())
-            self.dialog.set_remaining((milliseconds + 999) // 1000, preparing=self._wait_phase == "program")
+            self.dialog.set_remaining((milliseconds + 999) // 1000,
+                                      total_seconds=self.timer.interval() // 1000,
+                                      preparing=self._wait_phase == "program")
 
     def start_now(self):
         # Never bypass the player loading phase or race an in-flight launch.
