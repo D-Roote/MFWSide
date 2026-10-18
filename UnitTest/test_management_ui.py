@@ -171,21 +171,22 @@ class ManagementUITests(unittest.TestCase):
         self.assertEqual(self.panel._selected(), [])
         self.assertEqual(self.panel.select_all_button.text(), "모두 선택")
 
-    def test_sort_direction_is_plain_text_and_native_arrows_stay_hidden_after_scan(self):
+    def test_headers_stay_plain_without_sorting_guidance_after_click_and_scan(self):
         usages = [self.usage("a", "A", 20, 20), self.usage("b", "B", 30, 30)]
         self.publish_inventory(usages)
         self.show_management()
         tree = self.panel.tree
         header = tree.header()
         self.assertFalse(header.isSortIndicatorShown())
-        self.assertEqual(tree.headerItem().text(2), "정리 가능 (내림차순)")
+        self.assertEqual([tree.headerItem().text(i) for i in range(4)], list(self.panel.COLUMN_LABELS))
         point = QPoint(header.sectionViewportPosition(2) + header.sectionSize(2) // 2, header.height() // 2)
         fixtures.QTest.mouseClick(header.viewport(), Qt.MouseButton.LeftButton, pos=point)
-        self.assertEqual(tree.headerItem().text(2), "정리 가능 (오름차순)")
-        self.assertIn("내림차순", tree.headerItem().toolTip(2))
+        self.assertEqual(header.sortIndicatorOrder(), Qt.SortOrder.AscendingOrder)
+        self.assertEqual([tree.headerItem().text(i) for i in range(4)], list(self.panel.COLUMN_LABELS))
+        self.assertTrue(all(not tree.headerItem().toolTip(i) for i in range(4)))
         self.publish_inventory(usages)
         self.assertFalse(header.isSortIndicatorShown())
-        self.assertEqual(tree.headerItem().text(2), "정리 가능 (오름차순)")
+        self.assertEqual([tree.headerItem().text(i) for i in range(4)], list(self.panel.COLUMN_LABELS))
         self.assertTrue(all(not any(symbol in tree.headerItem().text(column) for symbol in "▲▼<>⌃⌄")
                             for column in range(tree.columnCount())))
 
