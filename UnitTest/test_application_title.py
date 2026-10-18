@@ -36,6 +36,12 @@ class InterfaceTitleUITests(unittest.TestCase):
         self.window._apply_interface_titles()
         self.assertEqual(self.window.windowTitle(), "리소스 창")
         self.assertEqual(self.window.ui.appBrandLabel.text(), "리소스 이름")
+        self.window.resize(self.window.minimumWidth(), 700)
+        self.window.show()
+        fixtures.QApplication.processEvents()
+        label = self.window.ui.appBrandLabel
+        self.assertTrue(label.isVisible())
+        self.assertGreaterEqual(label.width(), label.fontMetrics().horizontalAdvance(label.text()))
 
     def test_long_and_markup_like_labels_remain_plain_and_do_not_expand_window(self):
         self.window.runtime.interface.update(label="<b>프로젝트</b>" * 25, title="창")
@@ -46,6 +52,9 @@ class InterfaceTitleUITests(unittest.TestCase):
         self.assertEqual(self.window.width(), self.window.minimumWidth())
         self.assertEqual(self.window.ui.appBrandLabel.textFormat(), fixtures.Qt.TextFormat.PlainText)
         self.assertEqual(self.window.ui.appBrandLabel.toolTip(), "<b>프로젝트</b>" * 25)
+        label = self.window.ui.appBrandLabel
+        self.assertGreater(label.width(), 100)
+        self.assertLess(label.geometry().right(), self.window.ui.dashboardNavButton.geometry().left())
 
 
 if __name__ == "__main__":
