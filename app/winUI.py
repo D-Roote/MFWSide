@@ -42,7 +42,8 @@ from app.appStartup import AppStartupCoordinator
 
 
 WINDOW_SIZE = [1200, 800]
-WINDOW_TITLE = "MAA_Blue Archive"
+DEFAULT_APP_NAME = "MFWSide"
+WINDOW_TITLE = DEFAULT_APP_NAME
 UI_FILENAME = "baseUI.ui"
 QSS_FILENAME = "style.qss"
 SETTINGS_QSS_FILENAME = "settings.qss"
@@ -72,6 +73,15 @@ PROGRAM_LAUNCH_TASK = {
     "builtin": True,
     "requires_program": True,
 }
+
+
+def interface_titles(interface):
+    """Keep project branding independent, with explicit client fallbacks."""
+    interface = interface if isinstance(interface, dict) else {}
+    def text(key):
+        value = interface.get(key)
+        return value.strip() if isinstance(value, str) and value.strip() else DEFAULT_APP_NAME
+    return text("label"), text("title")
 
 
 RESULT_ERROR_PREFIXES = (
@@ -1612,6 +1622,7 @@ class MainWindow(QMainWindow):
         )
 
         self.runtime = AppRuntime()
+        self._apply_interface_titles()
         self.after_actions = AfterActionPreferences()
         self.after_action_backend = WindowsAfterActionBackend()
         self.after_action_panel = None
@@ -1692,6 +1703,16 @@ class MainWindow(QMainWindow):
         self._ui_state_ready = True
         if getattr(self.runtime, "interface_missing", False) is True:
             self.append_log("interface.json이 없습니다. 기본 Win32 설정 UI를 표시하며 작업 실행은 비활성화됩니다.")
+
+    def _apply_interface_titles(self):
+        label, title = interface_titles(self.runtime.interface)
+        self.ui.appBrandLabel.setTextFormat(Qt.TextFormat.PlainText)
+        self.ui.appBrandLabel.setText(label)
+        self.ui.appBrandLabel.setToolTip(label)
+        self.ui.appBrandLabel.setAccessibleName(label)
+        self.ui.appBrandLabel.setMinimumWidth(0)
+        self.ui.appBrandLabel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setWindowTitle(title)
 
     def _setup_after_action_footer(self):
         footer = self.ui.settingStartWidget_2
