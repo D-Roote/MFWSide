@@ -203,6 +203,10 @@ QFrame#settingsRow {
     border-top: 1px solid #EEF2F7;
 }
 
+QFrame#settingsRow[joinedProgramRow="true"] {
+    border-top: none;
+}
+
 QFrame#settingsDivider {
     background-color: #EEF2F7;
     border: none;

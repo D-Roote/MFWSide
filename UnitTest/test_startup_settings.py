@@ -116,18 +116,18 @@ class StartupSettingsUITests(unittest.TestCase):
         self.assertEqual(saved["startup"]["emulator_wait_seconds"], 45)
         self.assertEqual(saved["startup"]["task_wait_seconds"], 12)
 
-    def test_auto_task_wait_row_follows_checkbox_and_restores_saved_value(self):
-        self.assertTrue(self.panel.auto_start_wait_row.isHidden())
+    def test_auto_task_wait_row_is_always_visible_and_restores_saved_value(self):
+        self.assertFalse(self.panel.auto_start_wait_row.isHidden())
         self.panel.startup_checkboxes["auto_start_tasks"].setChecked(True)
         self.assertFalse(self.panel.auto_start_wait_row.isHidden())
         self.panel.auto_start_wait_spin.setValue(15)
         self.panel.startup_checkboxes["auto_start_tasks"].setChecked(False)
-        self.assertTrue(self.panel.auto_start_wait_row.isHidden())
-        self.panel.startup_checkboxes["auto_start_tasks"].setChecked(True)
+        self.assertFalse(self.panel.auto_start_wait_row.isHidden())
         with patch("app.winUI.AppRuntime", return_value=self.window.runtime):
             restored = fixtures.MainWindow()
         self.addCleanup(restored.deleteLater)
         panel = restored.settings_panel
+        self.assertFalse(panel.startup_checkboxes["auto_start_tasks"].isChecked())
         self.assertFalse(panel.auto_start_wait_row.isHidden())
         self.assertEqual(panel.auto_start_wait_spin.value(), 15)
         layout = self.panel._section_widgets["program"].layout()
@@ -138,25 +138,32 @@ class StartupSettingsUITests(unittest.TestCase):
         description = self.panel._section_widgets["program"].description_label.text()
         self.assertIn("\n변경한 시작 동작은 다음 MAABA 실행부터 적용됩니다.", description)
         self.panel.startup_checkboxes["auto_start_tasks"].setChecked(True)
-        self.assertTrue(self.panel.startup_status.isHidden())
+        self.assertTrue(self.panel.startup_registration_status.isHidden())
+        self.assertFalse(hasattr(self.panel, "startup_status"))
+        self.assertFalse(hasattr(self.panel, "startup_cancel_button"))
 
-    def test_program_groups_have_separators_and_manual_description_bottom_inset(self):
+    def test_program_paths_are_one_group_with_manual_description_bottom_inset(self):
         layout = self.panel._section_widgets["program"].layout()
         launch_row = self.panel.startup_checkboxes["launch_program"].parentWidget()
-        self.assertLess(layout.indexOf(launch_row), layout.indexOf(self.panel.program_paths_divider))
-        self.assertLess(layout.indexOf(self.panel.program_paths_divider), layout.indexOf(self.panel.program_auto_status))
+        self.assertLess(layout.indexOf(launch_row), layout.indexOf(self.panel.program_auto_status))
+        self.assertFalse(hasattr(self.panel, "program_paths_divider"))
+        for row in (self.panel.program_path_row, self.panel.program_extra_row):
+            self.assertTrue(row.property("joinedProgramRow"))
         self.assertLess(layout.indexOf(self.panel.startup_warning_divider), layout.indexOf(self.panel.startup_warning))
         self.assertEqual(self.panel.program_path_row.layout().contentsMargins().bottom(), 12)
         self.assertEqual(self.panel.program_active_status_container.layout().contentsMargins().bottom(), 12)
-        for divider in (self.panel.program_paths_divider, self.panel.startup_warning_divider):
-            self.assertEqual(divider.height(), 1)
-            self.assertEqual(divider.objectName(), "settingsDivider")
+        divider = self.panel.startup_warning_divider
+        self.assertEqual(divider.height(), 1)
+        self.assertEqual(divider.objectName(), "settingsDivider")
 
     def test_registry_failure_rolls_checkbox_back(self):
         self.set_enabled.side_effect = PermissionError("denied")
         self.panel.startup_checkboxes["launch_on_login"].setChecked(True)
         self.assertFalse(self.panel.startup_checkboxes["launch_on_login"].isChecked())
-        self.assertIn("실패", self.panel.startup_status.text())
+        self.assertIn("실패", self.panel.startup_registration_status.text())
+        self.set_enabled.side_effect = None
+        self.panel.startup_checkboxes["launch_on_login"].setChecked(True)
+        self.assertTrue(self.panel.startup_registration_status.isHidden())
 
     def test_startup_spacing_and_dividers_fit_both_themes_at_minimum_width(self):
         from PySide6.QtCore import QPoint

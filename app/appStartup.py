@@ -45,20 +45,16 @@ class AppStartupCoordinator(QObject):
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self._finish_wait)
-        window.settings_panel.startup_cancel_button.clicked.connect(self.cancel)
 
     @property
     def ready_to_close(self):
         return self.worker is None
 
     def _status(self, message):
-        self.window.settings_panel.startup_status.setText(message)
-        self.window.settings_panel.startup_status.show()
         self.window.append_log(message)
 
     def _set_active(self, value):
         self.active = value
-        self.window.settings_panel.startup_cancel_button.setVisible(value)
         self.activity_changed.emit(value)
 
     def start(self):

@@ -339,6 +339,13 @@ class SettingsPanel(QWidget):
             checkbox.setAccessibleName(title)
             self.startup_checkboxes[key] = checkbox
             self._add_setting_row(program_layout, title, description, checkbox, control_right_margin=12)
+            if key == "launch_on_login":
+                self.startup_registration_status = QLabel()
+                self.startup_registration_status.setObjectName("settingsRowDescription")
+                self.startup_registration_status.setTextFormat(Qt.TextFormat.PlainText)
+                self.startup_registration_status.setWordWrap(True)
+                self.startup_registration_status.hide()
+                program_layout.addWidget(self.startup_registration_status)
             if key == "auto_start_tasks":
                 self.auto_start_wait_spin = NoWheelSpinBox()
                 self.auto_start_wait_spin.setObjectName("settingsSpinBox")
@@ -351,17 +358,6 @@ class SettingsPanel(QWidget):
                     self.auto_start_wait_spin,
                 )
                 self.auto_start_wait_spin.setAccessibleName("작업 자동 시작 대기 시간")
-                self.auto_start_wait_row.hide()
-        self.startup_status = QLabel()
-        self.startup_status.setObjectName("settingsRowDescription")
-        self.startup_status.setWordWrap(True)
-        self.startup_status.hide()
-        program_layout.addWidget(self.startup_status)
-        self.startup_cancel_button = QPushButton("시작 동작 취소")
-        self.startup_cancel_button.setObjectName("monitorActionButton")
-        self.startup_cancel_button.hide()
-        program_layout.addWidget(self.startup_cancel_button)
-        self.program_paths_divider = self._add_section_divider(program_layout)
         self.program_auto_status = QLabel()
         self.program_auto_status.setObjectName("programPathStatus")
         self.program_auto_status.setWordWrap(True)
@@ -398,6 +394,7 @@ class SettingsPanel(QWidget):
             WIN32_MANUAL_PATH_DESCRIPTION,
             program_path_controls,
         )
+        self.program_path_row.setProperty("joinedProgramRow", True)
         program_path_controls.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.program_path_row.layout().setColumnStretch(0, 0)
         self.program_path_row.layout().setColumnStretch(1, 1)
@@ -429,6 +426,7 @@ class SettingsPanel(QWidget):
         self.program_extra_input.setPlaceholderText('예: --profile "사용자 1"')
         self.program_extra_input.setMinimumWidth(240)
         self.program_extra_row = self._add_setting_row(program_layout, "추가 인수", "수동 경로에 포함한 인수 뒤에 추가합니다. 바로가기 자체의 인수는 유지합니다.", self.program_extra_input)
+        self.program_extra_row.setProperty("joinedProgramRow", True)
         self.startup_wait_spin = NoWheelSpinBox()
         self.startup_wait_spin.setObjectName("settingsSpinBox")
         self.startup_wait_spin.setRange(0, 3600)
@@ -615,7 +613,6 @@ class SettingsPanel(QWidget):
         for key, checkbox in self.startup_checkboxes.items():
             checkbox.setChecked(startup[key])
         self.auto_start_wait_spin.setValue(startup["task_wait_seconds"])
-        self.auto_start_wait_row.setVisible(startup["auto_start_tasks"])
         self.startup_wait_spin.setValue(startup["emulator_wait_seconds"])
         self.restart_connection_checkbox.setChecked(startup["restart_on_connection_failure"])
         try:
@@ -623,8 +620,8 @@ class SettingsPanel(QWidget):
             self.startup_checkboxes["launch_on_login"].setChecked(registered)
             self.config["startup"]["launch_on_login"] = registered
         except (OSError, ValueError, ImportError) as error:
-            self.startup_status.setText(f"시스템 시작 등록 상태를 확인하지 못했습니다: {error}")
-            self.startup_status.show()
+            self.startup_registration_status.setText(f"시스템 시작 등록 상태를 확인하지 못했습니다: {error}")
+            self.startup_registration_status.show()
         self._refresh_program_status()
 
         theme = self.config["appearance"]["theme"]
@@ -697,8 +694,6 @@ class SettingsPanel(QWidget):
                 "task_wait_seconds": self.auto_start_wait_spin.value()}
 
     def _on_startup_changed(self, key, checked):
-        if key == "auto_start_tasks":
-            self.auto_start_wait_row.setVisible(checked)
         if key == "launch_on_login":
             try:
                 self.startup_registration.set_enabled(checked)
@@ -707,9 +702,11 @@ class SettingsPanel(QWidget):
                 checkbox.blockSignals(True)
                 checkbox.setChecked(not checked)
                 checkbox.blockSignals(False)
-                self.startup_status.setText(f"시스템 시작 등록 변경 실패: {error}")
-                self.startup_status.show()
+                self.startup_registration_status.setText(f"시스템 시작 등록 변경 실패: {error}")
+                self.startup_registration_status.show()
                 return
+            self.startup_registration_status.clear()
+            self.startup_registration_status.hide()
         self._save()
 
     def _on_extra_arguments_changed(self, _text):

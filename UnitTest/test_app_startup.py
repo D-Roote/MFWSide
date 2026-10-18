@@ -84,7 +84,7 @@ class AppStartupTests(unittest.TestCase):
             self.assertTrue(self.startup.active)
             self.assertTrue(self.startup.timer.isActive())
             self.assertEqual(self.startup.timer.interval(), 7000)
-            self.assertIn("7초", self.panel.startup_status.text())
+            self.assertIn("7초", self.window.ui.logPrintText.toPlainText())
             start.assert_not_called()
             self.panel.auto_start_wait_spin.setValue(12)
             self.assertEqual(self.startup.timer.interval(), 7000)
@@ -117,9 +117,10 @@ class AppStartupTests(unittest.TestCase):
     def test_cancel_task_delay_prevents_late_auto_start(self):
         self.enable("auto_start_tasks")
         self.panel.auto_start_wait_spin.setValue(30)
+        cancel_from_dashboard = self.window.on_task_start
         with patch.object(self.window, "on_task_start") as start:
             self.startup.start()
-            self.panel.startup_cancel_button.click()
+            cancel_from_dashboard()
             self.assertFalse(self.startup.timer.isActive())
             self.expire_wait()
         start.assert_not_called()
@@ -144,7 +145,7 @@ class AppStartupTests(unittest.TestCase):
             self.startup.start()
         start.assert_not_called()
         self.assertFalse(self.startup.timer.isActive())
-        self.assertIn("선택되지", self.panel.startup_status.text())
+        self.assertIn("선택되지", self.window.ui.logPrintText.toPlainText())
 
     def test_launch_only_does_not_connect_or_start_tasker(self):
         self.target()
@@ -185,7 +186,7 @@ class AppStartupTests(unittest.TestCase):
         self.assertFalse(self.startup.active)
         self.assertFalse(self.startup.timer.isActive())
         self.assertFalse(self.window.isRunning)
-        self.assertIn("취소", self.panel.startup_status.text())
+        self.assertIn("취소", self.window.ui.logPrintText.toPlainText())
 
     def test_launch_failure_does_not_start_tasks(self):
         self.enable("launch_program", "auto_start_tasks")
@@ -194,7 +195,7 @@ class AppStartupTests(unittest.TestCase):
             self.startup.start()
             self.wait_launch()
         start.assert_not_called()
-        self.assertIn("실패", self.panel.startup_status.text())
+        self.assertIn("실패", self.window.ui.logPrintText.toPlainText())
         self.assertFalse(self.startup.active)
 
     def test_missing_interface_skips_automatic_execution(self):
