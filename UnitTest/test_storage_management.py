@@ -33,17 +33,35 @@ class StorageManagementTests(unittest.TestCase):
     def scan(self):
         return scan_storage(self.groups, self.user)
 
-    def test_debug_images_logs_backups_and_cache_are_counted(self):
+    def test_task_traces_error_images_and_python_bytecode_are_counted(self):
         for name in ("assets/user/debug/maafw.log", "assets/user/debug/maafw.bak.old.log",
-                     "assets/user/debug/error/shot.png", "app/__pycache__/main.cpython-310.pyc",
-                     ".cache/test_diagnostics/python_fault_1.log", ".cache/suite.log"):
+                     "assets/user/debug/error/shot.png", "app/__pycache__/main.cpython-310.pyc"):
             self.put(name)
         usage = {entry.group.key: entry for entry in self.scan()}
         self.assertEqual(usage["debug"].bytes, 30)
         self.assertEqual(usage["debug"].removable_bytes, 20)
         self.assertEqual(usage["app_cache"].bytes, 10)
-        self.assertEqual(usage["test_logs"].bytes, 10)
-        self.assertEqual(usage["dev_logs"].bytes, 10)
+
+    def test_content_labels_describe_the_record_not_its_folder_name(self):
+        directory = self.user / "arbitrary-name"
+        directory.mkdir()
+        groups = storage_groups(self.user, self.root, self.root / "app", self.root / "assets/resources")
+        labels = {group.key: group.label for group in groups}
+        self.assertEqual(labels["app_cache"], "Python 캐시")
+        self.assertEqual(labels["resource_debug"], "작업 로그")
+        self.assertEqual(labels["sessions"], "다중 실행 로그")
+        self.assertEqual(labels["user_arbitrary-name"], "기타 실행 로그")
+        self.assertFalse(any("arbitrary-name" in label or ".cache" in label for label in labels.values()))
+
+    def test_development_cache_is_neither_inventoried_nor_deleted(self):
+        protected = [self.put(name) for name in (".cache/test_diagnostics/python_fault_1.log", ".cache/suite.log",
+                     "assets/user/.cache/debug/keep.log", "app/.cache/__pycache__/keep.pyc",
+                     "assets/user/debug/.cache/keep.log")]
+        groups = storage_groups(self.user, self.root, self.root / "app", self.root / "assets/resources")
+        self.assertFalse(any(group.key in {"test_logs", "dev_logs", "user_.cache"} for group in groups))
+        self.assertEqual(sum(usage.bytes for usage in scan_storage(groups, self.user)), 0)
+        self.assertEqual(cleanup_storage(scan_storage(groups, self.user), self.user).files, 0)
+        self.assertTrue(all(path.exists() for path in protected))
 
     def test_resource_model_accounts_config_and_source_are_not_removed(self):
         protected = [self.put(name) for name in ("assets/resources/image/test.png", "assets/resources/model/ocr.bin",

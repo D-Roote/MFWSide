@@ -42,22 +42,25 @@ class CleanupResult:
 
 
 def storage_groups(user_dir, root_dir, app_dir, resource_dir):
-    """Never inventory/delete .git, virtualenvs, resources/models or saved accounts."""
+    """Label generated content by purpose, not by its directory's name.
+
+    Framework task traces/error screenshots, process/Agent diagnostics and
+    Python bytecode are distinct cleanup categories. Development scratch data
+    (.cache), resources/models and saved accounts are not cleanup inventory.
+    """
     user, root, app, resources = map(lambda path: Path(path).absolute(), (user_dir, root_dir, app_dir, resource_dir))
-    groups = [StorageGroup("sessions", "다중 실행 세션", user, user / "sessions", "sessions"),
-              StorageGroup("debug", "앱 진단 로그·오류 이미지", user, user / "debug"),
-              StorageGroup("user_logs", "사용자 폴더의 로그", user, user, "shallow")]
+    groups = [StorageGroup("sessions", "다중 실행 로그", user, user / "sessions", "sessions"),
+              StorageGroup("debug", "작업 실행 및 오류 기록", user, user / "debug"),
+              StorageGroup("user_logs", "프로그램 실행 기록", user, user, "shallow")]
     if user.is_dir() and not user.is_symlink():
         for child in sorted(user.iterdir()):
-            if child.name not in {"sessions", "debug", "config"} and child.is_dir() and not child.is_symlink():
-                groups.append(StorageGroup("user_" + child.name, child.name + " 로그", user, child, "logs"))
-    groups += [StorageGroup("resource_debug", "리소스 도구 진단 로그", resources, resources / "debug"),
-               StorageGroup("legacy_debug", "이전 실행 진단 로그", root, root / "debug"),
-               StorageGroup("legacy_logs", "이전 실행 로그", root, root / "logs", "logs"),
-               StorageGroup("app_cache", "앱 Python 캐시", app, app, "cache"),
-               StorageGroup("agent_cache", "Agent Python 캐시", root, root / "assets" / "agent", "cache"),
-               StorageGroup("test_logs", "개발 테스트 진단 로그", root, root / ".cache" / "test_diagnostics", "logs"),
-               StorageGroup("dev_logs", "개발 도구 로그", root, root / ".cache", "shallow")]
+            if child.name not in {"sessions", "debug", "config", ".cache"} and child.is_dir() and not child.is_symlink():
+                groups.append(StorageGroup("user_" + child.name, "기타 실행 로그", user, child, "logs"))
+    groups += [StorageGroup("resource_debug", "작업 로그", resources, resources / "debug"),
+               StorageGroup("legacy_debug", "진단 로그 및 오류 화면", root, root / "debug"),
+               StorageGroup("legacy_logs", "실행 로그", root, root / "logs", "logs"),
+               StorageGroup("app_cache", "Python 캐시", app, app, "cache"),
+               StorageGroup("agent_cache", "에이전트 캐시", root, root / "assets" / "agent", "cache")]
     return groups
 
 
@@ -151,7 +154,7 @@ def _files(group, errors, cancelled):
         if cancelled():
             return
         current = Path(directory)
-        subdirs[:] = [name for name in subdirs if _safe_path(group, current / name)]
+        subdirs[:] = [name for name in subdirs if name != ".cache" and _safe_path(group, current / name)]
         if group.kind == "shallow":
             subdirs.clear()
         for name in filenames:

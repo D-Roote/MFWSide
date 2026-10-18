@@ -123,10 +123,6 @@ QTreeWidget#storageUsageTree {
 QTreeWidget#storageUsageTree::item {
     padding: 6px 4px;
 }
-QTreeWidget#storageUsageTree::item:selected {
-    background-color: #DDEFF8;
-    color: #075985;
-}
 QTreeWidget#storageUsageTree::indicator {
     width: 16px;
     height: 16px;

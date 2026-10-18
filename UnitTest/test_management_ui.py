@@ -5,7 +5,7 @@ import unittest
 
 import test_runtime_lifecycle as fixtures
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QAbstractItemView, QMessageBox
 from app.storageManagement import StorageGroup, StorageUsage
 
 
@@ -170,6 +170,47 @@ class ManagementUITests(unittest.TestCase):
         self.assertEqual(self.panel.tree.header().sortIndicatorOrder(), Qt.SortOrder.AscendingOrder)
         self.assertEqual(self.panel._selected(), [])
         self.assertEqual(self.panel.select_all_button.text(), "모두 선택")
+
+    def test_sort_direction_is_plain_text_and_native_arrows_stay_hidden_after_scan(self):
+        usages = [self.usage("a", "A", 20, 20), self.usage("b", "B", 30, 30)]
+        self.publish_inventory(usages)
+        self.show_management()
+        tree = self.panel.tree
+        header = tree.header()
+        self.assertFalse(header.isSortIndicatorShown())
+        self.assertEqual(tree.headerItem().text(2), "정리 가능 (내림차순)")
+        point = QPoint(header.sectionViewportPosition(2) + header.sectionSize(2) // 2, header.height() // 2)
+        fixtures.QTest.mouseClick(header.viewport(), Qt.MouseButton.LeftButton, pos=point)
+        self.assertEqual(tree.headerItem().text(2), "정리 가능 (오름차순)")
+        self.assertIn("내림차순", tree.headerItem().toolTip(2))
+        self.publish_inventory(usages)
+        self.assertFalse(header.isSortIndicatorShown())
+        self.assertEqual(tree.headerItem().text(2), "정리 가능 (오름차순)")
+        self.assertTrue(all(not any(symbol in tree.headerItem().text(column) for symbol in "▲▼<>⌃⌄")
+                            for column in range(tree.columnCount())))
+
+    def test_rows_have_no_selection_highlight_but_checkboxes_still_work(self):
+        self.publish_inventory([self.usage("a", "A", 20, 20)])
+        self.show_management()
+        tree = self.panel.tree
+        settings = self.window.settings_panel
+        self.assertEqual(tree.selectionMode(), QAbstractItemView.SelectionMode.NoSelection)
+        for theme in ("light", "dark"):
+            with self.subTest(theme=theme):
+                settings.theme_combo.setCurrentIndex(settings.theme_combo.findData(theme))
+                settings.navigation.setCurrentRow(settings.section_order().index("management"))
+                fixtures.QTest.qWait(20)
+                item = tree.topLevelItem(0)
+                rect = tree.visualItemRect(item)
+                point = QPoint(200, rect.center().y())
+                fixtures.QTest.mouseClick(tree.viewport(), Qt.MouseButton.LeftButton, pos=point)
+                self.assertEqual(tree.selectedItems(), [])
+                image = tree.viewport().grab().toImage()
+                self.assertEqual(image.pixelColor(point).name(), "#142035" if theme == "dark" else "#f8fafc")
+                previous = item.checkState(0)
+                fixtures.QTest.keyClick(tree, Qt.Key.Key_Space)
+                self.assertNotEqual(item.checkState(0), previous)
+                self.assertEqual(tree.selectedItems(), [])
 
     def test_scrollbar_is_rounded_and_only_spans_the_body_in_both_themes(self):
         self.publish_inventory([self.usage(str(i), f"Log {i}", 100 + i, 100 + i) for i in range(30)])

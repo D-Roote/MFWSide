@@ -1,7 +1,7 @@
 """Explicit storage inspection/cleanup; workers never access GUI objects."""
 from PySide6.QtCore import QEvent, QThread, Qt, Signal, Slot
 from PySide6.QtWidgets import (
-    QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton,
+    QAbstractItemView, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -71,6 +71,7 @@ class ManagementPanel(QWidget):
     reset_requested = Signal()
     busy_changed = Signal(bool)
     shutdown_ready = Signal()
+    COLUMN_LABELS = ("항목", "사용 용량", "정리 가능", "파일 수")
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -90,13 +91,17 @@ class ManagementPanel(QWidget):
         self.tree = StorageUsageTree()
         self.tree.setObjectName("storageUsageTree")
         self.tree.setAccessibleName("폴더별 로그 용량 및 삭제 대상")
-        self.tree.setHeaderLabels(["폴더", "사용 용량", "정리 가능", "파일 수"])
+        self.tree.setHeaderLabels(self.COLUMN_LABELS)
         self.tree.setRootIsDecorated(False)
         self.tree.setUniformRowHeights(True)
+        self.tree.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.tree.setSortingEnabled(True)
         self.tree.sortItems(2, Qt.SortOrder.DescendingOrder)
         self.tree.header().setSectionsClickable(True)
-        self.tree.header().setSortIndicatorShown(True)
+        self.tree.header().setHighlightSections(False)
+        self.tree.header().setSortIndicatorShown(False)
+        self.tree.header().sortIndicatorChanged.connect(self._update_sort_labels)
+        self._update_sort_labels(2, Qt.SortOrder.DescendingOrder)
         self.tree.header().setStretchLastSection(False)
         self.tree.setMinimumHeight(210)
         self.tree.setMaximumHeight(300)
@@ -150,6 +155,16 @@ class ManagementPanel(QWidget):
     @property
     def busy(self):
         return self.worker is not None
+
+    def _update_sort_labels(self, column, order):
+        descending = order == Qt.SortOrder.DescendingOrder
+        direction = "내림차순" if descending else "오름차순"
+        next_direction = "오름차순" if descending else "내림차순"
+        header = self.tree.headerItem()
+        for index, label in enumerate(self.COLUMN_LABELS):
+            header.setText(index, f"{label} ({direction})" if index == column else label)
+            header.setToolTip(index, f"{direction} 정렬 중입니다. 클릭하면 {next_direction}으로 정렬합니다."
+                              if index == column else "클릭하여 이 항목을 기준으로 정렬합니다.")
 
     def configure(self, user_dir, root_dir, app_dir, resource_dir, guard):
         self.paths = (user_dir, root_dir, app_dir, resource_dir)
@@ -244,7 +259,9 @@ class ManagementPanel(QWidget):
             for usage in self.usages:
                 self.tree.addTopLevelItem(StorageUsageItem(usage))
             self.tree.setSortingEnabled(True)
+            self.tree.header().setSortIndicatorShown(False)
             self.tree.sortItems(sort_column, sort_order)
+            self._update_sort_labels(sort_column, sort_order)
             self.tree.blockSignals(False)
             total = format_size(sum(usage.bytes for usage in worker.result))
             removable = format_size(sum(usage.removable_bytes for usage in worker.result))

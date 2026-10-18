@@ -44,10 +44,6 @@ QTreeWidget#storageUsageTree {
     color: #DCE6F2;
     border-color: #30415E;
 }
-QTreeWidget#storageUsageTree::item:selected {
-    background-color: #243954;
-    color: #F0F6FD;
-}
 QTreeWidget#storageUsageTree QHeaderView::section {
     background-color: #1A2A42;
     color: #A8BED7;
