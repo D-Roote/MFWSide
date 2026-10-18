@@ -150,8 +150,10 @@ class StartupSettingsUITests(unittest.TestCase):
         for row in (self.panel.program_path_row, self.panel.program_extra_row):
             self.assertTrue(row.property("joinedProgramRow"))
         self.assertLess(layout.indexOf(self.panel.startup_warning_divider), layout.indexOf(self.panel.startup_warning))
-        self.assertEqual(self.panel.program_path_row.layout().contentsMargins().bottom(), 12)
-        self.assertEqual(self.panel.program_active_status_container.layout().contentsMargins().bottom(), 12)
+        for row in (self.panel.program_path_row, self.panel.program_extra_row):
+            margins = row.layout().contentsMargins()
+            self.assertEqual((margins.top(), margins.bottom()), (8, 8))
+        self.assertEqual(self.panel.program_active_status_container.layout().contentsMargins().bottom(), 8)
         divider = self.panel.startup_warning_divider
         self.assertEqual(divider.height(), 1)
         self.assertEqual(divider.objectName(), "settingsDivider")
@@ -181,8 +183,8 @@ class StartupSettingsUITests(unittest.TestCase):
                     contents = self.panel.detail_contents
                     label = self.panel.program_path_row.description_label
                     description_bottom = label.mapTo(contents, QPoint(0, label.height())).y()
-                    next_border = self.panel.program_extra_row.mapTo(contents, QPoint()).y()
-                    self.assertGreaterEqual(next_border - description_bottom, 12)
+                    next_title = self.panel.program_extra_row.title_label.mapTo(contents, QPoint()).y()
+                    self.assertGreaterEqual(next_title - description_bottom, 16)
                     self.assertLessEqual(label.heightForWidth(label.width()), 2 * label.fontMetrics().lineSpacing())
                     self.assertEqual(self.panel.detail_scroll.horizontalScrollBar().maximum(), 0)
                     divider = self.panel.startup_warning_divider
@@ -190,6 +192,31 @@ class StartupSettingsUITests(unittest.TestCase):
                     self.assertEqual(color, "#263650" if theme == "dark" else "#eef2f7")
                     warning_gap = self.panel.startup_warning.y() - divider.geometry().bottom() - 1
                     self.assertGreaterEqual(warning_gap, 12)
+
+    def test_joined_path_and_connection_groups_have_compact_consistent_gaps(self):
+        from PySide6.QtCore import QPoint
+        self.panel.controller_combo.addItem("Adb", {"name": "Adb", "type": "Adb"})
+        self.window.resize(self.window.minimumWidth(), 820)
+        self.window.show()
+        self.window.ui.mainPages.setCurrentWidget(self.window.ui.settingTab)
+        for theme in ("light", "dark"):
+            self.panel.theme_combo.setCurrentIndex(self.panel.theme_combo.findData(theme))
+            for controller in (0, self.panel.controller_combo.count() - 1):
+                with self.subTest(theme=theme, controller=controller):
+                    self.panel.controller_combo.setCurrentIndex(controller)
+                    fixtures.QTest.qWait(20)
+                    contents = self.panel.detail_contents
+                    def top(widget):
+                        return widget.mapTo(contents, QPoint()).y()
+                    status = self.panel.program_auto_status
+                    title = self.panel.program_path_row.title_label
+                    self.assertEqual(top(title) - (top(status) + status.height()), 8)
+                    group = self.panel._connection_group
+                    details = self.panel.controller_details
+                    self.assertEqual(top(group.title_label) - (top(details) + details.height()), 8)
+                    combo = self.window.monitor.panels[1].preset_combo
+                    self.assertEqual(top(combo) - (top(group.title_label) + group.title_label.height()), 6)
+                    self.assertEqual(self.panel.detail_scroll.horizontalScrollBar().maximum(), 0)
 
     def test_extra_arguments_are_combined_with_manual_target_and_validated(self):
         target = self.window.runtime.user_dir / "player.exe"

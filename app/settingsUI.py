@@ -362,7 +362,6 @@ class SettingsPanel(QWidget):
         self.program_auto_status.setObjectName("programPathStatus")
         self.program_auto_status.setWordWrap(True)
         program_layout.addWidget(self.program_auto_status)
-        program_layout.addSpacing(8)
 
         self.program_path_input = QLineEdit()
         self.program_path_input.setObjectName("programPathInput")
@@ -395,6 +394,7 @@ class SettingsPanel(QWidget):
             program_path_controls,
         )
         self.program_path_row.setProperty("joinedProgramRow", True)
+        self.program_path_row.layout().setContentsMargins(0, 8, 0, 8)
         program_path_controls.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.program_path_row.layout().setColumnStretch(0, 0)
         self.program_path_row.layout().setColumnStretch(1, 1)
@@ -408,7 +408,7 @@ class SettingsPanel(QWidget):
             "programActiveStatusContainer"
         )
         active_status_layout = QVBoxLayout(self.program_active_status_container)
-        active_status_layout.setContentsMargins(0, 0, 0, 12)
+        active_status_layout.setContentsMargins(0, 0, 0, 8)
         active_status_layout.setSpacing(0)
         active_status_layout.addWidget(self.program_active_status)
         self.program_active_status_effect = QGraphicsOpacityEffect(
@@ -427,6 +427,7 @@ class SettingsPanel(QWidget):
         self.program_extra_input.setMinimumWidth(240)
         self.program_extra_row = self._add_setting_row(program_layout, "추가 인수", "수동 경로에 포함한 인수 뒤에 추가합니다. 바로가기 자체의 인수는 유지합니다.", self.program_extra_input)
         self.program_extra_row.setProperty("joinedProgramRow", True)
+        self.program_extra_row.layout().setContentsMargins(0, 8, 0, 8)
         self.startup_wait_spin = NoWheelSpinBox()
         self.startup_wait_spin.setObjectName("settingsSpinBox")
         self.startup_wait_spin.setRange(0, 3600)
@@ -461,7 +462,6 @@ class SettingsPanel(QWidget):
             "선택한 캡처 및 입력 방식은 다음 실행부터 적용됩니다.",
             self.controller_combo,
         )
-        controller_layout.addSpacing(8)
         self.controller_details = QLabel()
         self.controller_details.setObjectName("controllerDetails")
         self.controller_details.setWordWrap(True)
@@ -825,8 +825,8 @@ class SettingsPanel(QWidget):
         group.setObjectName("settingsConnectionGroup")
         group.setProperty("connectionGroup", True)
         layout = QVBoxLayout(group)
-        layout.setContentsMargins(0, 12, 0, 0)
-        layout.setSpacing(8)
+        layout.setContentsMargins(0, 8, 0, 0)
+        layout.setSpacing(6)
         label = QLabel("연결 설정 · 사전 확인")
         label.setObjectName("settingsRowTitle")
         label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
@@ -837,7 +837,6 @@ class SettingsPanel(QWidget):
         layout.addWidget(panel)
         group.title_label = label
         self._connection_group = group
-        self._connection_layout.addSpacing(8)
         self._connection_layout.addWidget(group)
         self._watch_section_interactions(group)
 

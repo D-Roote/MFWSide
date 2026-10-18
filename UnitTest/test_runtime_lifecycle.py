@@ -2954,8 +2954,9 @@ class UILifecycleTests(unittest.TestCase):
                 row_margins = row.layout().contentsMargins()
                 section_layout = row.parentWidget().layout()
                 last_widget = section_layout.itemAt(section_layout.count() - 1).widget()
+                expected_padding = 8 if row.property("joinedProgramRow") else 12
                 expected_bottom = (
-                    0 if last_widget is row else 12
+                    0 if last_widget is row else expected_padding
                 )
                 expected_right = (
                     12 if isinstance(row.layout().itemAtPosition(0, 1).widget(), QCheckBox) else 0
@@ -2966,7 +2967,7 @@ class UILifecycleTests(unittest.TestCase):
                         row_margins.right(),
                         row_margins.bottom(),
                     ),
-                    (12, expected_right, expected_bottom),
+                    (expected_padding, expected_right, expected_bottom),
                 )
                 self.assertIs(
                     row.layout().itemAtPosition(0, 1).widget(),
@@ -3629,7 +3630,7 @@ class UILifecycleTests(unittest.TestCase):
         self.assertTrue(panel.program_active_status_container.isHidden())
         self.assertEqual(panel.program_apply_button.text(), "확인")
         row_margins = panel.program_path_row.layout().contentsMargins()
-        self.assertEqual((row_margins.top(), row_margins.bottom()), (12, 12))
+        self.assertEqual((row_margins.top(), row_margins.bottom()), (8, 8))
 
     def test_minimize_setting_is_saved_only_to_maa_config(self):
         self.window.ui.minimizeEnableBtn.setChecked(True)
