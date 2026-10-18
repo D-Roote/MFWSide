@@ -1,4 +1,58 @@
 /* 설정 탭 전용 스타일 */
+QDialog#startupDialog {
+    background-color: transparent;
+}
+QFrame#startupDialogCard {
+    background-color: #F8FBFE;
+    border: 1px solid #D9E5EF;
+    border-radius: 16px;
+}
+QLabel#startupDialogTitle {
+    color: #19304D;
+    font-size: 20px;
+    font-weight: bold;
+}
+QLabel#startupDialogDescription, QLabel#startupCountdownUnit {
+    color: #52677F;
+    font-size: 13px;
+}
+QLabel#startupCountdownValue {
+    color: #19304D;
+    font-size: 46px;
+    font-weight: bold;
+}
+QLabel#startupDialogNote {
+    color: #71849A;
+    font-size: 12px;
+}
+QPushButton#startupCancelButton, QPushButton#startupNowButton {
+    min-height: 24px;
+    padding: 8px 16px;
+    border-radius: 7px;
+    font-weight: bold;
+}
+QPushButton#startupCancelButton {
+    background-color: #EDF3F9;
+    color: #435D78;
+    border: 1px solid #D0DFEB;
+}
+QPushButton#startupNowButton {
+    background-color: #00AEEF;
+    color: #FFFFFF;
+    border: 1px solid #00AEEF;
+}
+QPushButton#startupCancelButton:hover, QPushButton#startupCancelButton:focus {
+    border-color: #00AEEF;
+}
+QPushButton#startupNowButton:hover, QPushButton#startupNowButton:focus {
+    background-color: #0098D6;
+}
+QPushButton#startupCancelButton:disabled, QPushButton#startupNowButton:disabled {
+    background-color: #EDF3F9;
+    color: #8A9BAD;
+    border-color: #D0DFEB;
+}
+
 QMessageBox {
     background-color: #FFFFFF;
     color: #334155;

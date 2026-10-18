@@ -2450,7 +2450,6 @@ class MainWindow(QMainWindow):
 
     def on_task_start(self):
         if self.app_startup.active:
-            self.app_startup.cancel()
             return
         if self.settings_panel.program_test_busy or self.settings_panel.management.busy:
             return
@@ -3258,8 +3257,7 @@ class MainWindow(QMainWindow):
         self.settings_panel.set_program_test_allowed(self._can_test_program())
         self.settings_panel.management.set_allowed(self._can_manage_data())
         if self.app_startup.active and not self.isRunning and not self._closing:
-            self.ui.workStartBtn.setText("시작 동작 취소")
-            self.ui.workStartBtn.setEnabled(True)
+            self.ui.workStartBtn.setEnabled(False)
             return
         if (self.settings_panel.program_test_busy or self.settings_panel.management.busy) and not self.isRunning:
             self.ui.workStartBtn.setEnabled(False)
