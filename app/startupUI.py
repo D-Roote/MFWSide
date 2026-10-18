@@ -9,7 +9,7 @@ class CountdownDial(QWidget):
         super().__init__(parent)
         self.maximum = 1
         self.value = 0
-        self.setFixedSize(184, 214)
+        self.setFixedSize(184, 184)
         self.value_label = QLabel("0", self)
         self.value_label.setObjectName("startupCountdownValue")
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -17,7 +17,7 @@ class CountdownDial(QWidget):
         self.unit_label = QLabel("초", self)
         self.unit_label.setObjectName("startupCountdownUnit")
         self.unit_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.unit_label.setGeometry(0, 190, 184, 24)
+        self.unit_label.setGeometry(0, 138, 184, 24)
         self.setAccessibleName("자동 시작까지 남은 초")
 
     def set_value(self, value, maximum):
