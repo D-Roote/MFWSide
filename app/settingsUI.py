@@ -686,6 +686,32 @@ class SettingsPanel(QWidget):
         self.startup_wait_spin.valueChanged.connect(self._save)
         self.auto_start_wait_spin.valueChanged.connect(self._save)
         self.program_extra_input.textChanged.connect(self._on_extra_arguments_changed)
+        for section in self._sections:
+            self._watch_section_interactions(section)
+
+    def _watch_section_interactions(self, widget):
+        # Watch the controls, their labels, and viewports without filtering the
+        # whole application. Late-added connection controls use the same hook.
+        widget.installEventFilter(self)
+        for child in widget.findChildren(QWidget):
+            child.installEventFilter(self)
+
+    def _highlight_setting_section(self, widget):
+        if self._syncing_navigation:
+            return
+        while isinstance(widget, QWidget) and widget is not self:
+            key = widget.property("settingsSectionKey")
+            if key in self._section_widgets and self._section_widgets[key] is widget:
+                row = self.section_order().index(key)
+                self._syncing_navigation = True
+                try:
+                    # Changing the active editor must not scroll the card to
+                    # the top as selecting a navigation entry normally does.
+                    self.navigation.setCurrentRow(row)
+                finally:
+                    self._syncing_navigation = False
+                return
+            widget = widget.parentWidget()
 
     def startup_settings(self):
         return {**{key: checkbox.isChecked() for key, checkbox in self.startup_checkboxes.items()},
@@ -813,6 +839,7 @@ class SettingsPanel(QWidget):
         self._connection_group = group
         self._connection_layout.addSpacing(8)
         self._connection_layout.addWidget(group)
+        self._watch_section_interactions(group)
 
     def save_monitor_preferences(self, connection=None, screen=None):
         if connection is not None:
@@ -1095,6 +1122,8 @@ class SettingsPanel(QWidget):
         label.setMinimumHeight(max(0, label.heightForWidth(max(1, label.width()))))
 
     def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.FocusIn, QEvent.Type.KeyPress):
+            self._highlight_setting_section(watched)
         if (hasattr(self, "program_path_row") and watched is self.program_path_row.description_label
                 and event.type() in (QEvent.Type.Resize, QEvent.Type.FontChange)):
             self._update_program_path_layout()
