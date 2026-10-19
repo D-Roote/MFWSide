@@ -107,6 +107,7 @@ class AgentConfigurationTests(unittest.TestCase):
         with patch.dict(os.environ, {"PI_CONTROLLER": "old", "pi_resource": "old", "CUSTOM_ENV": "keep"}), \
                 patch("app.agentRuntime.Library.version", return_value="5.12.3"):
             environment = agent_environment(interface, controller, resource)
+            self.assertEqual(environment["PI_CLIENT_NAME"], "MFWSide")
         self.assertEqual(json.loads(environment["PI_CONTROLLER"]), controller)
         self.assertEqual(json.loads(environment["PI_RESOURCE"]), resource)
         self.assertNotIn("\n", environment["PI_CONTROLLER"])

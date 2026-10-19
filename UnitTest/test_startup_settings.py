@@ -140,7 +140,7 @@ class StartupSettingsUITests(unittest.TestCase):
 
     def test_static_startup_guidance_is_in_section_description_not_status(self):
         description = self.panel._section_widgets["program"].description_label.text()
-        self.assertIn("\n변경한 시작 동작은 다음 MAABA 실행부터 적용됩니다.", description)
+        self.assertIn("\n변경한 시작 동작은 다음 MFWSide 실행부터 적용됩니다.", description)
         self.panel.startup_checkboxes["auto_start_tasks"].setChecked(True)
         self.assertTrue(self.panel.startup_registration_status.isHidden())
         self.assertFalse(hasattr(self.panel, "startup_status"))

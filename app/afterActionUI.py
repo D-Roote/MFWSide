@@ -3,11 +3,12 @@ from PySide6.QtCore import QPointF, Qt, QThread, Signal
 from PySide6.QtGui import QFontMetricsF, QPainter, QPalette
 from PySide6.QtWidgets import (
     QCheckBox, QFrame, QLabel, QPushButton, QStyle, QStyleOptionButton,
-    QStyleOptionFocusRect, QVBoxLayout, QWidget,
+    QStyleOptionFocusRect, QVBoxLayout, QWidget, QSizePolicy,
 )
 
 from app.afterActions import SYSTEM_ACTIONS
 from app.adbAppStop import AdbAppStopBackend
+from app.identity import DEFAULT_APP_NAME, display_name
 
 
 class OpticalCheckBox(QCheckBox):
@@ -40,7 +41,7 @@ class OpticalCheckBox(QCheckBox):
 class AfterActionPanel(QWidget):
     changed = Signal()
 
-    def __init__(self, preferences, parent=None, controller_type="Win32"):
+    def __init__(self, preferences, parent=None, controller_type="Win32", app_title=DEFAULT_APP_NAME):
         super().__init__(parent)
         self.preferences = preferences
         self.controller_type = controller_type
@@ -61,7 +62,7 @@ class AfterActionPanel(QWidget):
         self.controls = {}
         self._title(root, "프로그램")
         for key, label in (("close_program", "대상 프로그램 종료"), ("close_app", "대상 앱 종료"),
-                           ("close_emulator", "앱플레이어 종료 (미지원)"), ("close_maa", "MAA 종료")):
+                           ("close_emulator", "앱플레이어 종료 (미지원)"), ("close_maa", "")):
             control = self._checkbox(root, key, label)
             control.toggled.connect(lambda checked, name=key: self._update(name, checked))
         self.controls["close_program"].setToolTip("실제 작업 실행 창에 정상 종료를 요청합니다. 강제 종료하지 않습니다.")
@@ -84,7 +85,15 @@ class AfterActionPanel(QWidget):
         self.clear_button.clicked.connect(self._clear)
         root.addWidget(self.clear_button)
         self.once_checkbox.toggled.connect(self._set_once)
+        self.set_app_title(app_title)
         self.sync()
+
+    def set_app_title(self, title):
+        text = f"{display_name(title)} 종료"
+        control = self.controls["close_maa"]
+        control.setText(text)
+        control.setToolTip(text)
+        control.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
 
     def _title(self, layout, text, first=False):
         if not first:

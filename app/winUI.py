@@ -41,10 +41,10 @@ from app.storageManagement import reset_settings_files
 from app.appStartup import AppStartupCoordinator
 from app.presetUI import TaskPresetPanel
 from app.taskPresets import PRESET_VERSION, clean_preset_name, make_task_preset, normalize_task_presets
+from app.identity import DEFAULT_APP_NAME, interface_titles, log_filename_stem
 
 
 WINDOW_SIZE = [1200, 800]
-DEFAULT_APP_NAME = "MFWSide"
 WINDOW_TITLE = DEFAULT_APP_NAME
 UI_FILENAME = "baseUI.ui"
 QSS_FILENAME = "style.qss"
@@ -75,15 +75,6 @@ PROGRAM_LAUNCH_TASK = {
     "builtin": True,
     "requires_program": True,
 }
-
-
-def interface_titles(interface):
-    """Keep project branding independent, with explicit client fallbacks."""
-    interface = interface if isinstance(interface, dict) else {}
-    def text(key):
-        value = interface.get(key)
-        return value.strip() if isinstance(value, str) and value.strip() else DEFAULT_APP_NAME
-    return text("label"), text("title")
 
 
 RESULT_ERROR_PREFIXES = (
@@ -1723,6 +1714,12 @@ class MainWindow(QMainWindow):
         self.ui.appBrandLabel.setMinimumWidth(0)
         self.ui.appBrandLabel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.setWindowTitle(title)
+        if hasattr(self, "settings_panel"):
+            self.settings_panel.set_app_title(title)
+        if getattr(self, "after_action_panel", None) is not None:
+            self.after_action_panel.set_app_title(title)
+        if hasattr(self, "monitor"):
+            self._refresh_after_action_summary()
 
     def _setup_after_action_footer(self):
         footer = self.ui.settingStartWidget_2
@@ -1766,7 +1763,8 @@ class MainWindow(QMainWindow):
     def _refresh_after_action_summary(self):
         self.ui.endWorkStatusLabel.setText("작업 완료 후" + (" · 이번에만" if self.after_actions.once else ""))
         controller_type = self._after_action_controller_type()
-        description = self.after_actions.description(controller_type)
+        description = self.after_actions.description(controller_type, self.windowTitle())
+        self.ui.endStatusLabel.setTextFormat(Qt.TextFormat.PlainText)
         self.ui.endStatusLabel.setText(description)
         self.ui.endStatusLabel.setToolTip(description)
         editable = not self.isRunning and not self._close_pending and not self._completion_pending and not self._closing
@@ -1783,7 +1781,7 @@ class MainWindow(QMainWindow):
             return
         self.clear_sub_cases(show_placeholder=False)
         panel = AfterActionPanel(self.after_actions, self.ui.scrollSettingContents,
-                                 controller_type=self._after_action_controller_type())
+                                 controller_type=self._after_action_controller_type(), app_title=self.windowTitle())
         self.after_action_panel = panel
         self._option_content_layout().addWidget(panel)
         panel.changed.connect(self._after_actions_changed)
@@ -2280,6 +2278,7 @@ class MainWindow(QMainWindow):
             controllers=self.runtime.interface.get("controller", []),
             supported_controller_names=resource_config.get("controller"),
             parent=self.ui.settingTab,
+            app_title=self.windowTitle(),
         )
 
         setting_layout = self.ui.settingTab.layout()
@@ -2457,7 +2456,7 @@ class MainWindow(QMainWindow):
         self.ui.logLatestButton.hide()
 
     def save_log(self):
-        default_name = f"MAABA-log-{datetime.now():%Y%m%d-%H%M%S}.txt"
+        default_name = f"{log_filename_stem(self.windowTitle())}-log-{datetime.now():%Y%m%d-%H%M%S}.txt"
         file_path, _selected_filter = QFileDialog.getSaveFileName(
             self,
             "실행 로그 저장",
@@ -2648,7 +2647,7 @@ class MainWindow(QMainWindow):
                     except OSError as log_error:
                         self.append_log(f"시스템 종료 오류 기록 실패: {log_error}")
                 else:
-                    self.append_log(f"MAA 종료 후 시스템 동작 예약 실패: {error}")
+                    self.append_log(f"{self.windowTitle()} 종료 후 시스템 동작 예약 실패: {error}")
         super().closeEvent(event)
 
     def _finish_pending_close(self):

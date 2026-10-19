@@ -27,6 +27,7 @@ from app.programTest import ProgramTestWorker
 from app.settingsNavigation import SETTINGS_SECTIONS, SettingsNavigation, normalize_section_order
 from app.managementUI import ManagementPanel
 from app.paths import PATHS
+from app.identity import DEFAULT_APP_NAME, display_name
 from app.startupSettings import WindowsStartupRegistration, normalize_startup_config
 from app.monitoring import normalize_connection_preferences, normalize_screen_preferences
 from app.pg_init import (
@@ -207,8 +208,10 @@ class SettingsPanel(QWidget):
         controllers,
         supported_controller_names=None,
         parent=None,
+        app_title=DEFAULT_APP_NAME,
     ):
         super().__init__(parent)
+        self.app_title = display_name(app_title)
         self.setObjectName("settingsPanel")
         self._syncing_navigation = False
         self._sections = []
@@ -225,6 +228,7 @@ class SettingsPanel(QWidget):
         self.config = self.store.load(default_controller)
 
         self._build_ui()
+        self.set_app_title(self.app_title)
         self._apply_config()
         self._connect_controls()
         QTimer.singleShot(0, lambda: self._sync_navigation_to_scroll(0))
@@ -324,21 +328,23 @@ class SettingsPanel(QWidget):
 
         program, program_layout = self._create_section(
             "시작 설정",
-            "MAABA 시작 동작과 자동 실행할 대상 프로그램을 설정합니다.\n"
-            "변경한 시작 동작은 다음 MAABA 실행부터 적용됩니다.",
+            "",
         )
+        self.startup_section = program
         self.startup_checkboxes = {}
+        self.startup_rows = {}
         for key, title, description in (
-            ("launch_on_login", "시스템 시작 시 MAABA 실행", "현재 Windows 사용자 로그인 시 이 앱을 실행합니다."),
-            ("minimize_app", "MAABA 실행 후 최소화", "앱을 실행한 뒤 MAABA 창을 최소화합니다."),
-            ("auto_start_tasks", "MAABA 실행 후 작업 자동 시작", "설정을 복원한 뒤 시작 탭에서 선택한 작업을 한 번 실행합니다."),
-            ("launch_program", "MAABA 실행 후 대상 프로그램 실행", "아래 경로로 프로그램을 실행합니다. ADB에서는 앱플레이어를 실행하며 게임 앱은 파이프라인에서 실행합니다."),
+            ("launch_on_login", "", "현재 Windows 사용자 로그인 시 이 앱을 실행합니다."),
+            ("minimize_app", "", "앱을 실행한 뒤 이 앱의 창을 최소화합니다."),
+            ("auto_start_tasks", "", "설정을 복원한 뒤 시작 탭에서 선택한 작업을 한 번 실행합니다."),
+            ("launch_program", "", "아래 경로로 프로그램을 실행합니다. ADB에서는 앱플레이어를 실행하며 게임 앱은 파이프라인에서 실행합니다."),
         ):
             checkbox = QCheckBox()
             checkbox.setObjectName("settingsCheckbox")
             checkbox.setAccessibleName(title)
             self.startup_checkboxes[key] = checkbox
-            self._add_setting_row(program_layout, title, description, checkbox, control_right_margin=12)
+            self.startup_rows[key] = self._add_setting_row(
+                program_layout, title, description, checkbox, control_right_margin=12)
             if key == "launch_on_login":
                 self.startup_registration_status = QLabel()
                 self.startup_registration_status.setObjectName("settingsRowDescription")
@@ -514,6 +520,26 @@ class SettingsPanel(QWidget):
 
         root_layout.addWidget(self.navigation, 2)
         root_layout.addWidget(self.detail_scroll, 8)
+
+    def set_app_title(self, title):
+        self.app_title = display_name(title)
+        self.startup_section.description_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.startup_section.description_label.setText(
+            f"{self.app_title} 시작 동작과 자동 실행할 대상 프로그램을 설정합니다.\n"
+            f"변경한 시작 동작은 다음 {self.app_title} 실행부터 적용됩니다.")
+        labels = {
+            "launch_on_login": f"시스템 시작 시 {self.app_title} 실행",
+            "minimize_app": f"{self.app_title} 실행 후 최소화",
+            "auto_start_tasks": f"{self.app_title} 실행 후 작업 자동 시작",
+            "launch_program": f"{self.app_title} 실행 후 대상 프로그램 실행",
+        }
+        for key, text in labels.items():
+            label = self.startup_rows[key].title_label
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            label.setWordWrap(True)
+            label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+            label.setText(text)
+            self.startup_checkboxes[key].setAccessibleName(text)
 
     def _create_section(self, title, description):
         section = QFrame()

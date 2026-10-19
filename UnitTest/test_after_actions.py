@@ -305,7 +305,7 @@ class CompletionUITests(unittest.TestCase):
         control.setFocusPolicy(fixtures.Qt.FocusPolicy.NoFocus)
         for theme in (fixtures.TitleBarTheme.LIGHT, fixtures.TitleBarTheme.DARK):
             self.window.set_title_bar_theme(theme)
-            for text in ("이번에만", "대상 프로그램 종료", "MAA 종료", "에뮬레이터 종료"):
+            for text in ("이번에만", "대상 프로그램 종료", "MFWSide 종료", "에뮬레이터 종료"):
                 for checked in (False, True):
                     control.setText(text)
                     control.setChecked(checked)

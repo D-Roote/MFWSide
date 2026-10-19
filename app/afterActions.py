@@ -63,7 +63,7 @@ class AfterActionPreferences:
             actions["close_emulator"] = False
         return actions
 
-    def description(self, controller_type="Win32"):
+    def description(self, controller_type="Win32", app_title="MFWSide"):
         actions = self.for_controller(controller_type)
         parts = []
         if actions["close_program"]:
@@ -73,7 +73,7 @@ class AfterActionPreferences:
         if actions["close_emulator"]:
             parts.append("에뮬레이터 종료")
         if actions["close_maa"]:
-            parts.append("MAA 종료")
+            parts.append(f"{app_title} 종료")
         if actions["system_action"]:
             parts.append(SYSTEM_ACTIONS[actions["system_action"]])
         return " · ".join(parts) or "아무것도 하지 않음"

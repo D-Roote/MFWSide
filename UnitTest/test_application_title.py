@@ -1,8 +1,10 @@
 """Resource labels/title are independent; missing fields use MFWSide."""
 import unittest
+from unittest.mock import patch
 
 import test_runtime_lifecycle as fixtures
 from app.winUI import interface_titles
+from app.identity import log_filename_stem
 
 
 class InterfaceTitleTests(unittest.TestCase):
@@ -16,6 +18,12 @@ class InterfaceTitleTests(unittest.TestCase):
                      {"label": " \n", "title": ""}, {"label": 12, "title": False}):
             with self.subTest(data=data):
                 self.assertEqual(interface_titles(data), ("MFWSide", "MFWSide"))
+
+    def test_log_names_cannot_create_paths_or_invalid_windows_names(self):
+        self.assertEqual(log_filename_stem('A/B:C\\D*?<>|"'), "A_B_C_D______")
+        self.assertEqual(log_filename_stem("..."), "MFWSide")
+        self.assertEqual(log_filename_stem(None), "MFWSide")
+        self.assertLessEqual(len(log_filename_stem("긴 제목" * 100)), 80)
 
 
 class InterfaceTitleUITests(unittest.TestCase):
@@ -55,6 +63,50 @@ class InterfaceTitleUITests(unittest.TestCase):
         label = self.window.ui.appBrandLabel
         self.assertGreater(label.width(), 100)
         self.assertLess(label.geometry().right(), self.window.ui.dashboardNavButton.geometry().left())
+
+    def test_startup_and_completion_use_title_not_resource_label(self):
+        window = self.window
+        window.runtime.interface.update(label="리소스 표시 이름", title="별도 실행 앱")
+        window._apply_interface_titles()
+        panel = window.settings_panel
+        self.assertIn("다음 별도 실행 앱 실행", panel.startup_section.description_label.text())
+        for row in panel.startup_rows.values():
+            self.assertIn("별도 실행 앱", row.title_label.text())
+            self.assertNotIn("MAABA", row.title_label.text())
+        window.after_actions.update("close_maa", True)
+        window.show_after_actions()
+        self.assertEqual(window.after_action_panel.controls["close_maa"].text(), "별도 실행 앱 종료")
+        self.assertEqual(window.ui.endStatusLabel.text(), "별도 실행 앱 종료")
+        window.runtime.interface.pop("title")
+        window._apply_interface_titles()
+        self.assertEqual(window.after_action_panel.controls["close_maa"].text(), "MFWSide 종료")
+        self.assertIn("MFWSide", panel.startup_rows["launch_on_login"].title_label.text())
+
+    def test_log_save_dialog_uses_sanitized_resource_title(self):
+        window = self.window
+        window.runtime.interface.update(title="App:Name/Logs")
+        window._apply_interface_titles()
+        with patch("app.winUI.QFileDialog.getSaveFileName", return_value=("", "")) as dialog:
+            self.assertFalse(window.save_log())
+        self.assertTrue(dialog.call_args.args[2].startswith("App_Name_Logs-log-"))
+
+    def test_long_and_markup_like_titles_do_not_expand_settings_in_either_theme(self):
+        window = self.window
+        window.runtime.interface.update(title="<b>긴앱제목</b>" * 30)
+        window._apply_interface_titles()
+        window.ui.mainPages.setCurrentWidget(window.ui.settingTab)
+        window.settings_panel.navigation.setCurrentRow(window.settings_panel.section_order().index("program"))
+        window.resize(window.minimumWidth(), 820)
+        window.show()
+        for theme in ("light", "dark"):
+            with self.subTest(theme=theme):
+                panel = window.settings_panel
+                panel.theme_combo.setCurrentIndex(panel.theme_combo.findData(theme))
+                fixtures.QApplication.processEvents()
+                self.assertEqual(window.width(), window.minimumWidth())
+                self.assertEqual(panel.detail_scroll.horizontalScrollBar().maximum(), 0)
+                for row in panel.startup_rows.values():
+                    self.assertEqual(row.title_label.textFormat(), fixtures.Qt.TextFormat.PlainText)
 
 
 if __name__ == "__main__":

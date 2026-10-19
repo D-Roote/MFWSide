@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from maa.agent_client import AgentClient
 from maa.library import Library
+from app.identity import DEFAULT_APP_NAME
 
 
 AGENT_START_TIMEOUT_MS = 10_000
@@ -91,7 +92,7 @@ class EndpointLease:
 
 
 def resolve_agent_executable(executable, directory):
-    # A frozen MAABA EXE is not a Python interpreter: never launch it as one.
+    # A frozen client EXE is not a Python interpreter: never launch it as one.
     if executable.casefold() in ("python", "python.exe", "python3", "python3.exe") and not getattr(sys, "frozen", False):
         return str(Path(sys.executable).resolve())
     candidate = Path(executable)
@@ -104,7 +105,7 @@ def resolve_agent_executable(executable, directory):
     if not resolved:
         raise ValueError(f"Agent 실행 파일을 찾을 수 없습니다: {executable}. Python 환경 또는 별도 Agent 실행 파일을 준비하세요.")
     if getattr(sys, "frozen", False) and Path(resolved).resolve() == Path(sys.executable).resolve():
-        raise ValueError("MAABA 실행 파일을 Agent 인터프리터로 사용할 수 없습니다.")
+        raise ValueError("앱 실행 파일을 Agent 인터프리터로 사용할 수 없습니다.")
     if Path(resolved).suffix.casefold() in (".bat", ".cmd"):
         raise ValueError("Agent child_exec에는 배치 파일 대신 실행 파일을 지정하세요.")
     return resolved
@@ -113,7 +114,7 @@ def resolve_agent_executable(executable, directory):
 def agent_environment(interface, controller, resource):
     environment = {key: value for key, value in os.environ.items() if not key.upper().startswith("PI_")}
     environment.update({
-        "PI_INTERFACE_VERSION": "v2.5.0", "PI_CLIENT_NAME": "MAABA",
+        "PI_INTERFACE_VERSION": "v2.5.0", "PI_CLIENT_NAME": DEFAULT_APP_NAME,
         "PI_CLIENT_VERSION": "", "PI_CLIENT_LANGUAGE": "ko_kr",
         "PI_CLIENT_MAAFW_VERSION": Library.version(),
         "PI_VERSION": str(interface.get("version", "")),
