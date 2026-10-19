@@ -2929,12 +2929,13 @@ class UILifecycleTests(unittest.TestCase):
         self.assertEqual(
             general_titles,
             [
-                "실행 시 최소화",
+                "작업 실행 시 최소화",
                 "자동 실행 작업",
                 "작업 중 옵션 편집",
                 "작업 시작 시 로그 초기화",
             ],
         )
+        self.assertEqual(self.window.ui.minimizeEnableBtn.text(), "실행 시 최소화")
         general_checkboxes = (
             panel.minimize_checkbox,
             panel.program_launch_checkbox,

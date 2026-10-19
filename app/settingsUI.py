@@ -296,7 +296,7 @@ class SettingsPanel(QWidget):
         self.minimize_checkbox.setObjectName("settingsCheckbox")
         self._add_setting_row(
             general_layout,
-            "실행 시 최소화",
+            "작업 실행 시 최소화",
             "작업을 시작할 때 대상 프로그램 창을 최소화합니다.",
             self.minimize_checkbox,
             control_right_margin=12,
