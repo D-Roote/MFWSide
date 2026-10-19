@@ -1,3 +1,6 @@
+# Game resources and personal runtime data are installed separately.
+/assets/
+
 # Virtual environments
 .venv/
 venv/
@@ -6,39 +9,27 @@ env/
 .evn/
 evn/
 
-# User configuration and generated runtime files
-assets/user/
-assets/resources/config/
-assets/resources/debug/
-
-# Local OCR Model
-assets/resources/model/**
-
-# PyInstaller
+# Generated build files
 *.manifest
 *.spec
+dist/
+build/
+*.egg-info/
 
-# Installer Logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-#Cache
+# Python and test caches
 __pycache__/
 *$py.class
 *.py[cod]
 *.pyd
-
-# Test and analysis caches
 /.cache/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
 
-dist/
-build/
-*.egg-info/
-
+# Local tools and IDE files
+pip-log.txt
+pip-delete-this-directory.txt
 .vscode/
 .idea/
 Thumbs.db
