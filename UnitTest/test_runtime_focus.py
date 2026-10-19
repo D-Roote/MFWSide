@@ -10,7 +10,7 @@ from app.runtime import AppRuntime, PROGRAM_LAUNCH_ENTRY, SW_SHOWNOACTIVATE, WIN
 
 class MinimizeFocusTests(unittest.TestCase):
     def setUp(self):
-        self.runtime = AppRuntime()
+        self.runtime = fixtures.make_test_runtime()
         self.runtime._target_hwnd = 42
         self.runtime._user32 = self.api = MagicMock()
         self.api.IsWindow.return_value = True

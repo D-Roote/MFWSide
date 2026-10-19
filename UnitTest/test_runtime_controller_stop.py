@@ -11,7 +11,7 @@ from app.runtime import AppRuntime, ControllerActivitySink, WindowPlacement
 
 class ControllerStopTests(unittest.TestCase):
     def setUp(self):
-        self.runtime = AppRuntime()
+        self.runtime = fixtures.make_test_runtime()
         self.runtime._user32 = MagicMock()
         self.controller = self.runtime.controller = MagicMock(connected=True)
         self.controller.post_inactive.return_value = fixtures.make_job()

@@ -101,11 +101,28 @@ def make_job(succeeded=True):
     return job
 
 
+def make_test_runtime():
+    # Runtime regression must not depend on the user's installed game resources.
+    interface = {
+        "interface_version": 2,
+        "controller": [{"name": name, "type": "Win32", "win32": {
+            "window_regex": "^Blue Archive$", "screencap": method,
+            "mouse": "PostMessageWithWindowPos", "keyboard": "PostMessage"}}
+            for name, method in (("Win32PrintWindow", "PrintWindow"), ("Win32FramePool", "FramePool"))],
+        "resource": [{"name": "Test", "path": ["."],
+                      "controller": ["Win32PrintWindow", "Win32FramePool"]}],
+        "task": [{"name": "TestTask", "entry": "Login_Main", "label": "테스트 작업"}],
+        "option": {},
+    }
+    with patch.object(AppRuntime, "_load_interface", return_value=interface):
+        return AppRuntime()
+
+
 class RuntimeLifecycleTests(unittest.TestCase):
     def setUp(self):
         self.contexts = ExitStack()
         self.addCleanup(self.contexts.close)
-        self.runtime = AppRuntime()
+        self.runtime = make_test_runtime()
         self.runtime._user32 = MagicMock()
         self.runtime._user32.GetForegroundWindow.return_value = 456
 
@@ -1167,7 +1184,7 @@ class RuntimeLifecycleTests(unittest.TestCase):
             succeeded, message = self.runtime.run_task([("Login_Main", {})])
 
         self.assertFalse(succeeded)
-        self.assertEqual(message, "일부 작업에 실패했습니다: 게임 로그인")
+        self.assertEqual(message, "일부 작업에 실패했습니다: 테스트 작업")
         self.assertNotIn("전체 실행 작업", message)
 
     def test_reinitialize_releases_old_binding_and_sink(self):
