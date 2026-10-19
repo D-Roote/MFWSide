@@ -174,6 +174,19 @@ class BackendTests(unittest.TestCase):
             self.backend.system_action.assert_called_once_with("sleep")
             self.assertIn("unsupported power state", path.read_text(encoding="utf-8"))
 
+    def test_frozen_helper_reuses_exe_in_headless_mode_and_resets_bundle_environment(self):
+        self.backend.kernel32.OpenProcess.return_value = 999
+        with patch("app.afterActions.sys.frozen", True, create=True), patch(
+                "app.afterActions.sys.executable", "C:/App/MFWSide.exe"), patch(
+                "app.afterActions.subprocess.Popen") as popen:
+            self.backend.defer_system_action("lock", Path("after_action.log"))
+        args, options = popen.call_args
+        self.assertEqual(args[0][:4], ["C:/App/MFWSide.exe", "--after-exit", "999", "lock"])
+        self.assertEqual(options["env"]["PYINSTALLER_RESET_ENVIRONMENT"], "1")
+        self.assertEqual(options["startupinfo"].lpAttributeList, {"handle_list": [999]})
+        self.assertTrue(options["close_fds"])
+        self.backend.user32.LockWorkStation.assert_not_called()
+
     def test_helper_wait_failure_never_runs_system_action(self):
         self.backend.kernel32.WaitForSingleObject.return_value = 0xFFFFFFFF
         self.backend.system_action = MagicMock()

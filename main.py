@@ -2,6 +2,9 @@ import sys
 from multiprocessing import freeze_support
 
 def main() -> int:
+    if sys.argv[1:2] == ["--after-exit"]:
+        from app.afterActions import run_after_exit_cli
+        return run_after_exit_cli(sys.argv[1:])
     from app.paths import PATHS
     from app.crashDiagnostics import enable_fault_log
     enable_fault_log(PATHS.user_dir / "debug")
@@ -17,6 +20,7 @@ def main() -> int:
         QMessageBox.critical(None, "앱 초기화 오류", f"프로젝트 설정을 확인하세요.\n{error}")
         return 1
     window.show()
+    app.setApplicationDisplayName(window.windowTitle())
     QTimer.singleShot(0, window.app_startup.start)
     
     return app.exec()

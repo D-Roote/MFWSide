@@ -201,8 +201,7 @@ class WindowsAfterActionBackend:
         if action not in SYSTEM_ACTIONS:
             raise ValueError("지원하지 않는 시스템 동작입니다.")
         self._load()
-        if getattr(sys, "frozen", False):
-            raise RuntimeError("현재 전원 동작 도우미는 Python 실행 환경이 필요합니다.")
+        frozen = getattr(sys, "frozen", False)
         if action != "lock":
             with self._shutdown_privilege():
                 pass  # Validate permission now, while failures can still be logged in the UI.
@@ -212,10 +211,19 @@ class WindowsAfterActionBackend:
         try:
             startup = subprocess.STARTUPINFO()
             startup.lpAttributeList = {"handle_list": [process]}
+            arguments = ["--after-exit", str(process), action, str(log_path)]
+            command = [sys.executable, *arguments] if frozen else [
+                sys.executable, str(Path(__file__).resolve()), *arguments]
+            options = {}
+            if frozen:
+                # An independent onefile helper must not reuse the parent's
+                # temporary bundle, which disappears when that process exits.
+                options["env"] = {**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1"}
             subprocess.Popen(
-                [sys.executable, str(Path(__file__).resolve()), "--after-exit", str(process), action, str(log_path)],
+                command,
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 startupinfo=startup, close_fds=True, creationflags=subprocess.CREATE_NO_WINDOW,
+                **options,
             )
         finally:
             self.kernel32.CloseHandle(process)
@@ -245,7 +253,19 @@ def _run_after_exit(handle, action, log_path):
     write_after_action_log(log_path, message)
 
 
+def run_after_exit_cli(arguments):
+    if (len(arguments) != 4 or arguments[0] != "--after-exit"
+            or arguments[2] not in SYSTEM_ACTIONS or not arguments[3] or "\0" in arguments[3]):
+        return 2
+    try:
+        handle = int(arguments[1])
+    except (TypeError, ValueError):
+        return 2
+    if not 0 < handle < 1 << (ctypes.sizeof(ctypes.c_void_p) * 8):
+        return 2
+    _run_after_exit(handle, arguments[2], arguments[3])
+    return 0
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 5 or sys.argv[1] != "--after-exit" or sys.argv[3] not in SYSTEM_ACTIONS:
-        raise SystemExit(2)
-    _run_after_exit(int(sys.argv[2]), sys.argv[3], sys.argv[4])
+    raise SystemExit(run_after_exit_cli(sys.argv[1:]))
