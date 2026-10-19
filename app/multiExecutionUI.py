@@ -451,13 +451,17 @@ class MultiExecutionPanel(QWidget):
             return
         if mode == "run" and snapshot.get("clear_log") and not self.manager.active:
             self.window.clear_log()
+        started = False
         for session_id in valid:
             try:
-                self.manager.start(session_id, requests[session_id], mode)
+                if self.manager.start(session_id, requests[session_id], mode):
+                    started = True
             except Exception as error:
                 self.report_status(str(error))
                 self.manager.mark_wave_failure(session_id, error)
                 break
+        if started and mode == "run":
+            self.window._minimize_app_after_task_start()
 
     def discover(self, session_id=None):
         if self.window.settings_panel.program_test_busy or self.window.settings_panel.management.busy or self.window.app_startup.active or self.daily_active:

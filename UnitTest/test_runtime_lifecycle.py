@@ -1392,6 +1392,7 @@ class SettingsStoreTests(unittest.TestCase):
         config = self.store.load(controller)
 
         self.assertFalse(config["general"]["minimize_enabled"])
+        self.assertFalse(config["general"]["minimize_app_on_task_start"])
         self.assertTrue(config["general"]["program_launch_task_enabled"])
         self.assertFalse(
             config["general"]["allow_option_edits_while_running"]
@@ -2108,6 +2109,7 @@ class UILifecycleTests(unittest.TestCase):
         panel = self.window.settings_panel
         rows_and_controls = (
             (panel.minimize_checkbox.parentWidget(), panel.minimize_checkbox),
+            (panel.task_minimize_app_row, panel.task_minimize_app_checkbox),
             (panel.program_launch_checkbox.parentWidget(), panel.program_launch_checkbox),
             (panel.runtime_edit_checkbox.parentWidget(), panel.runtime_edit_checkbox),
             (panel.clear_log_checkbox.parentWidget(), panel.clear_log_checkbox),
@@ -2930,6 +2932,7 @@ class UILifecycleTests(unittest.TestCase):
             general_titles,
             [
                 "작업 실행 시 최소화",
+                "작업 실행 시 앱 최소화",
                 "자동 실행 작업",
                 "작업 중 옵션 편집",
                 "작업 시작 시 로그 초기화",
@@ -2938,6 +2941,7 @@ class UILifecycleTests(unittest.TestCase):
         self.assertEqual(self.window.ui.minimizeEnableBtn.text(), "실행 시 최소화")
         general_checkboxes = (
             panel.minimize_checkbox,
+            panel.task_minimize_app_checkbox,
             panel.program_launch_checkbox,
             panel.runtime_edit_checkbox,
             panel.clear_log_checkbox,

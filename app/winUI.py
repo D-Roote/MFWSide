@@ -2549,6 +2549,12 @@ class MainWindow(QMainWindow):
 
         self.set_options_locked(True)
         self._refresh_after_action_summary()
+        self._minimize_app_after_task_start()
+
+    def _minimize_app_after_task_start(self):
+        # A one-shot UI action, independent of target-window minimization.
+        if self.settings_panel.minimize_app_on_task_start_enabled():
+            self.showMinimized()
 
     def on_task_stop(self):
         if (hasattr(self, "daily_restart") and self.daily_restart.active

@@ -50,6 +50,7 @@ ADB_MANUAL_PATH_DESCRIPTION = (
 DEFAULT_MAA_CONFIG = {
     "general": {
         "minimize_enabled": False,
+        "minimize_app_on_task_start": False,
         "program_launch_task_enabled": True,
         "allow_option_edits_while_running": False,
         "clear_log_on_start": True,
@@ -103,6 +104,7 @@ class SettingsStore:
             if isinstance(raw_general, dict):
                 for key in (
                     "minimize_enabled",
+                    "minimize_app_on_task_start",
                     "program_launch_task_enabled",
                     "allow_option_edits_while_running",
                     "clear_log_on_start",
@@ -299,6 +301,16 @@ class SettingsPanel(QWidget):
             "작업 실행 시 최소화",
             "작업을 시작할 때 대상 프로그램 창을 최소화합니다.",
             self.minimize_checkbox,
+            control_right_margin=12,
+        )
+        self.task_minimize_app_checkbox = QCheckBox()
+        self.task_minimize_app_checkbox.setObjectName("settingsCheckbox")
+        self.task_minimize_app_checkbox.setAccessibleName("작업 실행 시 앱 최소화")
+        self.task_minimize_app_row = self._add_setting_row(
+            general_layout,
+            "작업 실행 시 앱 최소화",
+            "작업을 시작할 때 이 앱의 창을 한 번 최소화합니다.",
+            self.task_minimize_app_checkbox,
             control_right_margin=12,
         )
         self.program_launch_checkbox = QCheckBox()
@@ -660,6 +672,7 @@ class SettingsPanel(QWidget):
     def _apply_config(self):
         general = self.config["general"]
         self.minimize_checkbox.setChecked(general["minimize_enabled"])
+        self.task_minimize_app_checkbox.setChecked(general["minimize_app_on_task_start"])
         self.program_launch_checkbox.setChecked(
             general["program_launch_task_enabled"]
         )
@@ -733,6 +746,7 @@ class SettingsPanel(QWidget):
             self._sync_navigation_to_scroll
         )
         self.minimize_checkbox.toggled.connect(self._on_minimize_changed)
+        self.task_minimize_app_checkbox.toggled.connect(self._save)
         self.program_launch_checkbox.toggled.connect(
             self._on_program_launch_enabled_changed
         )
@@ -865,6 +879,7 @@ class SettingsPanel(QWidget):
             "startup": self.startup_settings(),
             "general": {
                 "minimize_enabled": self.minimize_checkbox.isChecked(),
+                "minimize_app_on_task_start": self.task_minimize_app_checkbox.isChecked(),
                 "program_launch_task_enabled": (
                     self.program_launch_checkbox.isChecked()
                 ),
@@ -1252,6 +1267,9 @@ class SettingsPanel(QWidget):
 
     def minimize_enabled(self):
         return self.minimize_checkbox.isChecked()
+
+    def minimize_app_on_task_start_enabled(self):
+        return self.task_minimize_app_checkbox.isChecked()
 
     def set_minimize_enabled(self, enabled):
         self.minimize_checkbox.setChecked(bool(enabled))
