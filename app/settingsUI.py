@@ -218,6 +218,7 @@ class SettingsPanel(QWidget):
         self._program_test_worker = None
         self._program_test_closing = False
         self._program_test_allowed = True
+        self._controls_connected = False
         self.program_test_guard = lambda: True
         self.startup_registration = WindowsStartupRegistration(PATHS.root_dir)
         self.controllers = self._filter_controllers(
@@ -231,6 +232,7 @@ class SettingsPanel(QWidget):
         self.set_app_title(self.app_title)
         self._apply_config()
         self._connect_controls()
+        self._controls_connected = True
         QTimer.singleShot(0, lambda: self._sync_navigation_to_scroll(0))
 
     @staticmethod
@@ -364,6 +366,15 @@ class SettingsPanel(QWidget):
                     self.auto_start_wait_spin,
                 )
                 self.auto_start_wait_spin.setAccessibleName("작업 자동 시작 대기 시간")
+        self.program_path_divider = self._add_section_divider(program_layout)
+        self.program_path_title = QLabel("프로그램 경로 설정")
+        self.program_path_title.setObjectName("settingsRowTitle")
+        program_layout.addWidget(self.program_path_title)
+        self.program_path_description = QLabel("일부 기능을 사용하기 위해서는 대상 프로그램의 경로를 지정해야 합니다.")
+        self.program_path_description.setObjectName("settingsRowDescription")
+        self.program_path_description.setWordWrap(True)
+        program_layout.addWidget(self.program_path_description)
+        program_layout.addSpacing(8)
         self.program_auto_status = QLabel()
         self.program_auto_status.setObjectName("programPathStatus")
         self.program_auto_status.setWordWrap(True)
@@ -874,8 +885,25 @@ class SettingsPanel(QWidget):
         self._save()
 
     def _save(self):
+        self._sync_launch_requirements()
         self.config = self._collect_config()
         self.store.save(self.config)
+
+    def _sync_launch_requirements(self):
+        available = bool(self.program_settings().get("resolved_path"))
+        changed = False
+        for key in ("auto_start_tasks", "launch_program", "daily_restart"):
+            checkbox = self.startup_checkboxes.get(key)
+            if checkbox is None:
+                continue
+            if not available and checkbox.isChecked():
+                checkbox.blockSignals(True)
+                checkbox.setChecked(False)
+                checkbox.blockSignals(False)
+                changed = True
+            self.startup_rows[key].setEnabled(available)
+            checkbox.setToolTip("" if available else "프로그램 경로 설정에서 자동 또는 수동 실행 경로를 먼저 확인하세요.")
+        return changed
 
     def _on_minimize_changed(self, enabled):
         self._save()
@@ -1106,6 +1134,9 @@ class SettingsPanel(QWidget):
                 f"자동 검색: {auto_path}" + (" (Steam 설치 폴더)" if auto_path.is_dir() else ""),
                 True,
             )
+
+        if self._sync_launch_requirements() and self._controls_connected:
+            self._save()
 
         if self._manual_path_error_active:
             self._set_program_active_status_visible(True, animate)

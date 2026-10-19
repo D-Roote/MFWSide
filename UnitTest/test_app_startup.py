@@ -39,6 +39,8 @@ class AppStartupTests(unittest.TestCase):
         self.fail("startup worker did not finish")
 
     def enable(self, *names):
+        if "auto_start_tasks" in names and not self.panel.program_settings().get("resolved_path"):
+            self.target()
         for name in names:
             self.panel.startup_checkboxes[name].setChecked(True)
 
@@ -244,6 +246,7 @@ class AppStartupTests(unittest.TestCase):
         start.assert_called_once()
 
     def test_escape_and_window_close_cancel_instead_of_leaving_hidden_startup(self):
+        self.target()
         for action in ("escape", "close"):
             with self.subTest(action=action):
                 from app.appStartup import AppStartupCoordinator

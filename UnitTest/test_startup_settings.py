@@ -106,6 +106,10 @@ class StartupSettingsUITests(unittest.TestCase):
         self.set_enabled.assert_not_called()
 
     def test_startup_preferences_are_persisted(self):
+        target = self.window.runtime.user_dir / "example.exe"
+        target.touch()
+        self.panel.program_path_input.setText(str(target))
+        self.panel._apply_program_path()
         self.panel.startup_checkboxes["auto_start_tasks"].setChecked(True)
         self.panel.auto_start_wait_spin.setValue(12)
         self.panel.startup_wait_spin.setValue(45)
@@ -115,6 +119,31 @@ class StartupSettingsUITests(unittest.TestCase):
         self.assertTrue(saved["startup"]["restart_on_connection_failure"])
         self.assertEqual(saved["startup"]["emulator_wait_seconds"], 45)
         self.assertEqual(saved["startup"]["task_wait_seconds"], 12)
+
+    def test_auto_start_requires_a_confirmed_program_path(self):
+        checkbox = self.panel.startup_checkboxes["auto_start_tasks"]
+        self.assertFalse(checkbox.isEnabled())
+        checkbox.setChecked(True)
+        self.assertFalse(checkbox.isChecked())
+        target = self.window.runtime.user_dir / "example.exe"
+        target.touch()
+        self.panel.program_path_input.setText(str(target))
+        self.panel._apply_program_path()
+        self.assertTrue(checkbox.isEnabled())
+        checkbox.setChecked(True)
+        self.panel._apply_program_path()
+        self.assertFalse(checkbox.isEnabled())
+        self.assertFalse(checkbox.isChecked())
+        saved = json.loads(self.panel.store.config_path.read_text(encoding="utf-8"))
+        self.assertFalse(saved["startup"]["auto_start_tasks"])
+
+    def test_program_paths_have_a_separate_heading_and_divider(self):
+        panel = self.panel
+        self.assertEqual(panel.program_path_title.text(), "프로그램 경로 설정")
+        self.assertIn("경로를 지정", panel.program_path_description.text())
+        layout = panel.startup_section.layout()
+        self.assertLess(layout.indexOf(panel.startup_rows["launch_program"]), layout.indexOf(panel.program_path_divider))
+        self.assertLess(layout.indexOf(panel.program_path_divider), layout.indexOf(panel.program_auto_status))
 
     def test_auto_task_wait_row_is_always_visible_and_restores_saved_value(self):
         self.assertFalse(self.panel.auto_start_wait_row.isHidden())
