@@ -2797,6 +2797,21 @@ class MainWindow(QMainWindow):
         else:
             self.option_list_widget.addItem(item)
 
+        custom_widget = self._create_task_option_widget(task_data, saved_options)
+        custom_widget.checkbox.blockSignals(True)
+        custom_widget.checkbox.setChecked(is_checked)
+        custom_widget.checkbox.blockSignals(False)
+        if task_data.get("requires_program"):
+            custom_widget.set_available(
+                bool(self.settings_panel.program_settings().get("resolved_path")),
+                "설정에서 실행할 프로그램 경로를 먼저 확인해 주세요.",
+            )
+        custom_widget.adjustSize()
+        item.setSizeHint(custom_widget.sizeHint())
+        self.option_list_widget.setItemWidget(item, custom_widget)
+
+    def _create_task_option_widget(self, task_data, saved_options=None):
+        """The same defaults and saved-option rules for Start and instance presets."""
         options_dict = self.runtime.interface.get("option", {})
         task_options = [
             (name, options_dict[name])
@@ -2831,18 +2846,7 @@ class MainWindow(QMainWindow):
                 if selected or opt.get("type", "select") == "checkbox":
                     custom_widget.selected_options[opt_name] = selected
 
-        custom_widget.checkbox.blockSignals(True)
-        custom_widget.checkbox.setChecked(is_checked)
-        custom_widget.checkbox.blockSignals(False)
-        if task_data.get("requires_program"):
-            program_settings = self.settings_panel.program_settings()
-            custom_widget.set_available(
-                bool(program_settings.get("resolved_path")),
-                "설정에서 실행할 프로그램 경로를 먼저 확인해 주세요.",
-            )
-        custom_widget.adjustSize()
-        item.setSizeHint(custom_widget.sizeHint())
-        self.option_list_widget.setItemWidget(item, custom_widget)
+        return custom_widget
 
     def show_task_picker(self):
         if not self.task_add_button.isEnabled():
@@ -3424,6 +3428,7 @@ class MainWindow(QMainWindow):
             return False
         self.preset_panel.show_presets(updated, selected_id)
         self.preset_panel.show_status("")
+        self.multi_panel.refresh_task_presets()
         return True
 
     def _save_task_preset(self, name):
@@ -3538,41 +3543,62 @@ class MainWindow(QMainWindow):
 
     def build_execution_queue(self):
         execution_queue = []
-        
         for i in range(self.option_list_widget.count()):
             item = self.option_list_widget.item(i)
             widget_in_item = self.option_list_widget.itemWidget(item)
-            
             if widget_in_item and widget_in_item.is_checked():
-                task_entry = widget_in_item.task_data["entry"]
-                override_params = {}
-                task_override = widget_in_item.task_data.get("pipeline_override", {})
-                if isinstance(task_override, dict):
-                    merge_pipeline_override(override_params, task_override)
-                
-                for opt_name, opt in widget_in_item.task_options:
-                    selected_cases = widget_in_item.selected_options.get(opt_name, [])
-
-                    if opt.get("type", "select") == "input":
-                        if not isinstance(selected_cases, dict):
-                            continue
-                        input_override = build_input_pipeline_override(opt, selected_cases)
-                        if isinstance(input_override, dict):
-                            merge_pipeline_override(override_params, input_override)
-                        continue
-                    
-                    if not selected_cases:
-                        continue
-                        
-                    for case in opt.get("cases", []):
-                        if case["name"] in selected_cases:
-                            pipeline_override = case.get("pipeline_override", {})
-                            if isinstance(pipeline_override, dict):
-                                merge_pipeline_override(override_params, pipeline_override)
-                
-                execution_queue.append((task_entry, override_params))
-                
+                execution_queue.append(self._task_execution_entry(widget_in_item))
         return execution_queue
+
+    @staticmethod
+    def _task_execution_entry(widget):
+        override = {}
+        task_override = widget.task_data.get("pipeline_override", {})
+        if isinstance(task_override, dict):
+            merge_pipeline_override(override, task_override)
+        for name, option in widget.task_options:
+            selected = widget.selected_options.get(name, [])
+            if option.get("type", "select") == "input":
+                if isinstance(selected, dict):
+                    input_override = build_input_pipeline_override(option, selected)
+                    if isinstance(input_override, dict):
+                        merge_pipeline_override(override, input_override)
+            elif selected:
+                for case in option.get("cases", []):
+                    case_override = case.get("pipeline_override", {})
+                    if case["name"] in selected and isinstance(case_override, dict):
+                        merge_pipeline_override(override, case_override)
+        return widget.task_data["entry"], override
+
+    def build_task_preset_queue(self, preset_id):
+        preset = next((item for item in self.task_presets if item["id"] == preset_id), None)
+        if preset is None:
+            raise ValueError("선택한 작업 프리셋이 없습니다. 다른 프리셋 또는 현재 작업 목록을 선택하세요.")
+        tasks = self.runtime.interface.get("task", [])
+        by_name = {task["name"]: task for task in tasks}
+        by_entry = {task["entry"]: task for task in reversed(tasks)}
+        queue = []
+        for record in preset["tasks"]:
+            if not record["checked"]:
+                continue
+            if record["name"] == PROGRAM_LAUNCH_TASK_NAME:
+                if (self.settings_panel.program_launch_task_enabled()
+                        and self.settings_panel.program_settings().get("resolved_path")):
+                    queue.append((PROGRAM_LAUNCH_ENTRY, {}))
+                continue
+            task = by_name.get(record["name"]) or by_entry.get(record["entry"])
+            if task is None:
+                continue
+            widget = self._create_task_option_widget(task, record["selected_options"])
+            try:
+                if not widget.has_valid_input():
+                    raise ValueError(f"'{preset['name']}' 프리셋의 '{task.get('label') or task['name']}' 입력값을 확인하세요.")
+                queue.append(self._task_execution_entry(widget))
+            finally:
+                widget.deleteLater()
+        if not queue:
+            raise ValueError(f"'{preset['name']}' 프리셋에 현재 리소스에서 실행할 작업이 없습니다.")
+        return queue
 
     def save_user_config(self):
         if getattr(self, "_reset_settings_pending", False):

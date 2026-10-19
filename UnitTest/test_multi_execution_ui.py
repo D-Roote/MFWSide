@@ -254,7 +254,7 @@ class MultiExecutionUITests(unittest.TestCase):
                     card = self.panel.cards[instance_id]
                     self.assertEqual(card.status.x(), card.target_combo.x())
                     self.assertEqual(card.title.x(), card.preset_combo.x())
-                    self.assertEqual(card.status.width(), card.target_combo.width())
+                    self.assertEqual(card.status.width() + 6 + card.task_preset_combo.width(), card.target_combo.width())
         self.assertEqual(self.panel.cards_scroll.horizontalScrollBar().maximum(), 0)
 
     def test_one_bulk_snapshot_copies_task_options_and_personal_settings(self):
@@ -320,7 +320,7 @@ class MultiExecutionUITests(unittest.TestCase):
         self.panel.manager.sessions[sid].state = "running"
         self.window.save_user_config()
         data = json.loads((self.window.runtime.user_dir / "config/user_config.json").read_text(encoding="utf-8"))
-        self.assertEqual(set(data["multi_instances"][0]), {"title", "connection"})
+        self.assertEqual(set(data["multi_instances"][0]), {"title", "connection", "task_preset"})
         self.assertEqual(data["multi_instances"][0]["connection"], self.panel.manager.sessions[sid].connection)
 
     def test_failure_or_cancelled_wave_never_runs_system_actions(self):

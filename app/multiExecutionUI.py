@@ -12,6 +12,7 @@ from app.controls import PopupOnlyWheelComboBox
 from app.monitoring import normalize_connection_preferences, supported_presets, window_process_info
 from app.multiExecution import SessionManager, STATE_LABELS, discover_connections
 from app.sessionRuntime import target_identity
+from app.runtime import PROGRAM_LAUNCH_ENTRY
 
 
 class _SingleLineLabel(QLabel):
@@ -80,13 +81,21 @@ class InstanceCard(QFrame):
         self.status = _SingleLineLabel()
         self.status.setObjectName("settingsSectionDescription")
         rows.addWidget(self.title, 0, 0)
-        rows.addWidget(self.status, 0, 1)
-        self.adb_details_toggle = QPushButton("ADB 설정")
+        task_selection = QHBoxLayout()
+        task_selection.setSpacing(6)
+        self.task_preset_combo = PopupOnlyWheelComboBox()
+        self.task_preset_combo.setObjectName("monitorComboBox")
+        self.task_preset_combo.setAccessibleName("인스턴스 작업 프리셋")
+        self.task_preset_combo.setMinimumWidth(0)
+        self.task_preset_combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        task_selection.addWidget(self.status, 1)
+        task_selection.addWidget(self.task_preset_combo, 1)
+        rows.addLayout(task_selection, 0, 1)
+        self.adb_details_toggle = QPushButton("설정")
         self.adb_details_toggle.setObjectName("monitorActionButton")
         self.adb_details_toggle.setCheckable(True)
         self.adb_details_toggle.setAccessibleName("ADB 상세 연결 설정 펼치기")
         self.adb_details_toggle.setToolTip("ADB 경로·주소·편의 최소화 창 설정")
-        header.addWidget(self.adb_details_toggle)
         self.start_button = QPushButton("실행")
         self.stop_button = QPushButton("중지")
         self.delete_button = QPushButton("삭제")
@@ -129,6 +138,7 @@ class InstanceCard(QFrame):
         self.check_button = QPushButton("확인")
         self.check_button.setAccessibleName("인스턴스 연결 확인")
         self.check_button.setToolTip("선택한 대상의 연결 확인")
+        connection_row.addWidget(self.adb_details_toggle)
         for button in (self.discover_button, self.check_button):
             button.setObjectName("monitorActionButton")
             connection_row.addWidget(button)
@@ -156,6 +166,7 @@ class InstanceCard(QFrame):
         self.adb_path.editingFinished.connect(self._configure)
         self.address.editingFinished.connect(self._configure)
         self.emulator_combo.currentIndexChanged.connect(self._configure)
+        self.task_preset_combo.currentIndexChanged.connect(self._task_preset_changed)
         self.set_connection(session.connection)
         self._syncing = False
         self.refresh()
@@ -237,6 +248,7 @@ class InstanceCard(QFrame):
 
     def refresh(self):
         session = self.panel.manager.sessions[self.session_id]
+        self.sync_task_presets()
         state = STATE_LABELS.get(session.state, session.state)
         self.status.setText(state)
         details = [state]
@@ -247,15 +259,49 @@ class InstanceCard(QFrame):
         self.target_combo.setToolTip(self.target_combo.currentText())
         editable = (not session.active and not self.panel.window.isRunning and not self.panel.closing
                     and self.panel.discovery_worker is None and not self.panel.window._completion_pending
+                    and self.panel.window.monitor.pending_start is None
                     and not self.panel.daily_active)
         for control in (self.preset_combo, self.target_combo, self.adb_path, self.address, self.emulator_combo,
+                        self.task_preset_combo, self.adb_details_toggle,
                         self.discover_button, self.check_button, self.start_button):
             control.setEnabled(editable)
         connected = target_identity(session.connection) is not None
-        self.start_button.setEnabled(editable and connected)
+        preset_available = not session.task_preset or any(item["id"] == session.task_preset for item in self.panel.window.task_presets)
+        self.start_button.setEnabled(editable and connected and preset_available)
         self.check_button.setEnabled(editable and connected)
         self.stop_button.setEnabled(session.active and session.state != "stopping")
         self.delete_button.setEnabled(not session.remove_pending)
+
+    def sync_task_presets(self):
+        session = self.panel.manager.sessions[self.session_id]
+        choices = tuple((item["id"], item["name"]) for item in self.panel.window.task_presets)
+        fingerprint = (choices, session.task_preset)
+        if (getattr(self, "_task_preset_choices", None) == fingerprint
+                and self.task_preset_combo.currentData() == session.task_preset):
+            return
+        self._task_preset_choices = fingerprint
+        combo = self.task_preset_combo
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("현재 작업 목록", "")
+        for preset_id, name in choices:
+            combo.addItem(name, preset_id)
+        index = combo.findData(session.task_preset)
+        if index < 0:
+            combo.addItem("사용할 수 없는 프리셋", session.task_preset)
+            index = combo.count() - 1
+        combo.setCurrentIndex(index)
+        combo.setToolTip(combo.currentText())
+        combo.blockSignals(False)
+
+    def _task_preset_changed(self):
+        if self._syncing:
+            return
+        try:
+            self.panel.manager.set_task_preset(self.session_id, self.task_preset_combo.currentData() or "")
+        except ValueError as error:
+            self.panel.report_status(str(error))
+            self.sync_task_presets()
 
 
 class MultiExecutionPanel(QWidget):
@@ -280,7 +326,7 @@ class MultiExecutionPanel(QWidget):
         title = QLabel("다중 실행")
         title.setObjectName("settingsSectionTitle")
         tools.addWidget(title)
-        description = QLabel("시작 탭의 작업·옵션·사용자 설정을 실행 시 복제합니다. 연결 대상만 인스턴스별로 관리합니다.")
+        description = QLabel("현재 작업 목록 또는 선택한 프리셋으로 실행합니다. 연결 대상은 인스턴스별로 관리하며 나머지 사용자 설정은 공유합니다.")
         description.setObjectName("settingsSectionDescription")
         description.setWordWrap(True)
         tools.addWidget(description)
@@ -323,8 +369,20 @@ class MultiExecutionPanel(QWidget):
     def default_preferences(self):
         return normalize_connection_preferences(self.window.settings_panel.config.get("connection"))
 
-    def snapshot_for_session(self, session_id):
-        return self.window.multi_execution_snapshot()
+    def snapshot_for_session(self, session_id, base=None):
+        session = self.manager.sessions[session_id]
+        request = deepcopy(base if base is not None else self.window.multi_execution_snapshot(include_tasks=False))
+        request["queue"] = (self.window.build_task_preset_queue(session.task_preset) if session.task_preset
+                            else self.window.build_execution_queue())
+        request["after_actions"] = (deepcopy(self.window.after_actions.current)
+                                    if any(entry != PROGRAM_LAUNCH_ENTRY for entry, _ in request["queue"]) else {})
+        if not request["queue"]:
+            raise ValueError("실행할 작업이 선택되지 않았습니다. 현재 작업 목록 또는 프리셋을 확인하세요.")
+        return request
+
+    def refresh_task_presets(self):
+        for card in self.cards.values():
+            card.refresh()
 
     @property
     def daily_active(self):
@@ -359,7 +417,7 @@ class MultiExecutionPanel(QWidget):
         for session_id in list(self.manager.sessions):
             self.manager.remove(session_id)
 
-    def start_sessions(self, ids, mode="run", snapshot=None):
+    def start_sessions(self, ids, mode="run", snapshot=None, *, plans=None):
         if self.window.settings_panel.program_test_busy or self.window.settings_panel.management.busy or self.window.app_startup.active or self.daily_active:
             self.report_status("프로그램 실행 테스트가 끝난 뒤 다시 시도하세요.")
             return
@@ -367,30 +425,35 @@ class MultiExecutionPanel(QWidget):
             self.report_status("기본 작업이나 대상 탐색이 끝난 뒤 다시 시도하세요.")
             return
         try:
-            snapshot = deepcopy(snapshot or self.window.multi_execution_snapshot(include_tasks=mode == "run"))
+            snapshot_given = snapshot is not None
+            snapshot = deepcopy(snapshot if snapshot_given else self.window.multi_execution_snapshot(include_tasks=False))
         except (KeyError, ValueError, TypeError) as error:
-            self.report_status(f"시작 탭의 작업 설정을 확인하세요: {error}")
+            self.report_status(f"작업 구성 또는 프리셋을 확인하세요: {error}")
             return
         valid = []
+        requests = deepcopy(plans) if plans is not None else {}
         for session_id in ids:
             session = self.manager.sessions.get(session_id)
             if session is None or session.active:
                 continue
             try:
-                self.manager.validate_start(session_id, snapshot)
+                if session_id not in requests:
+                    requests[session_id] = (deepcopy(snapshot) if snapshot_given or mode != "run"
+                                            else self.snapshot_for_session(session_id, snapshot))
+                self.manager.validate_start(session_id, requests[session_id])
                 valid.append(session_id)
             except ValueError as error:
                 self.report_status(str(error))
                 return  # A partial batch must never trigger global completion actions.
         if not valid:
             return
-        if self.window.monitor.prepare_task_start(lambda: self.start_sessions(valid, mode, snapshot)):
+        if self.window.monitor.prepare_task_start(lambda: self.start_sessions(valid, mode, snapshot, plans=requests)):
             return
         if mode == "run" and snapshot.get("clear_log") and not self.manager.active:
             self.window.clear_log()
         for session_id in valid:
             try:
-                self.manager.start(session_id, snapshot, mode)
+                self.manager.start(session_id, requests[session_id], mode)
             except Exception as error:
                 self.report_status(str(error))
                 self.manager.mark_wave_failure(session_id, error)

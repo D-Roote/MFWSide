@@ -162,6 +162,7 @@ class Session:
     result: dict | None = None
     remove_pending: bool = False
     logs: deque = field(default_factory=lambda: deque(maxlen=200))
+    task_preset: str = ""
 
     @property
     def active(self):
@@ -189,7 +190,7 @@ class SessionManager(QObject):
     def active(self):
         return any(session.active for session in self.sessions.values())
 
-    def add(self, connection=None, title=None):
+    def add(self, connection=None, title=None, task_preset=""):
         connection = deepcopy(connection or {})
         identity = target_identity(connection)
         if identity and any(target_identity(session.connection) == identity for session in self.sessions.values()):
@@ -197,10 +198,20 @@ class SessionManager(QObject):
         number = 1
         while f"인스턴스 {number}" in {s.title for s in self.sessions.values()}:
             number += 1
-        session = Session(uuid4().hex, title or f"인스턴스 {number}", connection)
+        task_preset = task_preset if isinstance(task_preset, str) and len(task_preset) <= 256 else ""
+        session = Session(uuid4().hex, title or f"인스턴스 {number}", connection, task_preset=task_preset)
         self.sessions[session.id] = session
         self.changed.emit(session.id)
         return session.id
+
+    def set_task_preset(self, session_id, preset_id):
+        session = self.sessions[session_id]
+        if session.active:
+            raise ValueError("실행/연결 확인 중에는 작업 프리셋을 변경할 수 없습니다.")
+        if not isinstance(preset_id, str) or len(preset_id) > 256:
+            raise ValueError("올바른 작업 프리셋을 선택하세요.")
+        session.task_preset = preset_id
+        self.changed.emit(session_id)
 
     def configure(self, session_id, connection):
         session = self.sessions[session_id]
@@ -246,7 +257,7 @@ class SessionManager(QObject):
         request = deepcopy(snapshot)
         request["session_id"] = session_id
         if mode == "run" and not request.get("queue"):
-            raise ValueError("시작 탭에서 실행할 작업을 선택하세요.")
+            raise ValueError("실행할 작업을 선택하거나 작업 프리셋을 확인하세요.")
         session.mode, session.result = mode, None
         session.logs.clear() if request.get("clear_log") else None
         session.stop_event = self.context.Event()
@@ -347,7 +358,8 @@ class SessionManager(QObject):
             self.activity_changed.emit()
 
     def saved_sessions(self):
-        return [{"title": session.title, "connection": deepcopy(session.connection)} for session in self.sessions.values()]
+        return [{"title": session.title, "connection": deepcopy(session.connection), "task_preset": session.task_preset}
+                for session in self.sessions.values()]
 
     def restore(self, records):
         if isinstance(records, list):
@@ -358,7 +370,7 @@ class SessionManager(QObject):
                             or not isinstance(connection.get("preferences", {}), dict)
                             or not isinstance(connection.get("emulator", {}), dict)):
                         continue
-                    self.add(connection, str(record.get("title", "인스턴스"))[:128])
+                    self.add(connection, str(record.get("title", "인스턴스"))[:128], record.get("task_preset", ""))
 
     def shutdown(self):
         self.closing = True
