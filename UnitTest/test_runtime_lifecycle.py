@@ -2142,7 +2142,7 @@ class UILifecycleTests(unittest.TestCase):
         self.window.show()
         self.window.show_sub_cases(self.find_task_widget(self.window))
         panel = self.window.centralWidget().findChild(QWidget, "_2_settingWidget")
-        heading = panel.findChild(QLabel, "workspaceSectionTitle")
+        heading = self.window.detail_tab_button
         content = self.window.ui.scrollSettingContents
         group_titles = content.findChildren(QLabel, "optionGroupTitle")
         labels = [*group_titles, *content.findChildren(QLabel, "optionInputLabel")]
@@ -2168,8 +2168,9 @@ class UILifecycleTests(unittest.TestCase):
                     self.assertEqual(heading.font().pointSizeF(), 11)
                     self.assertTrue(all(label.font().pointSizeF() == 10 for label in labels))
                     first_y = group_titles[0].mapTo(panel, QPoint(0, 0)).y()
-                    self.assertGreaterEqual(first_y - heading.geometry().bottom(), 8)
-                    self.assertLessEqual(first_y - heading.geometry().bottom(), 16)
+                    heading_bottom = heading.mapTo(panel, QPoint(0, heading.height() - 1)).y()
+                    self.assertGreaterEqual(first_y - heading_bottom, 8)
+                    self.assertLessEqual(first_y - heading_bottom, 16)
                     self.assertEqual(content.layout().contentsMargins().left(), 6)
                     self.assertEqual(content.layout().contentsMargins().right(), 4)
 

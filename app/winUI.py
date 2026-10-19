@@ -17,7 +17,7 @@ from PySide6.QtGui import (QTextCursor,
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (QApplication, QMainWindow, QAbstractItemView,
                                QHBoxLayout, QVBoxLayout,
-                               QFrame, QListWidget, QListWidgetItem, QSizePolicy,
+                               QFrame, QListWidget, QListWidgetItem, QSizePolicy, QStackedWidget,
                                QToolButton, QWidget, QSplitter, QSplitterHandle,
                                QButtonGroup, QCheckBox, QLabel, QLineEdit,
                                QListView, QStyledItemDelegate,
@@ -39,6 +39,8 @@ from app.afterActionUI import AfterActionPanel, AdbAppStopWorker
 from app.adbAppStop import AdbAppStopTarget, capture_adb_app_stop_target
 from app.storageManagement import reset_settings_files
 from app.appStartup import AppStartupCoordinator
+from app.presetUI import TaskPresetPanel
+from app.taskPresets import PRESET_VERSION, clean_preset_name, make_task_preset, normalize_task_presets
 
 
 WINDOW_SIZE = [1200, 800]
@@ -1639,11 +1641,13 @@ class MainWindow(QMainWindow):
         self._deferred_system_action = ""
         self._closing = False
         self._reset_settings_pending = False
+        self.task_presets = []
         try:
             saved = json.loads((self.runtime.user_dir / "config" / "user_config.json").read_text(encoding="utf-8"))
             state = saved.get("ui_state")
             self._saved_ui_state = state if isinstance(state, dict) else {}
             self.after_actions = AfterActionPreferences(saved.get("after_actions"))
+            self.task_presets = normalize_task_presets(saved.get("task_presets"), self.runtime.interface)
         except (OSError, ValueError, AttributeError):
             pass
         self.log_sink = self.runtime.log_sink
@@ -1700,6 +1704,7 @@ class MainWindow(QMainWindow):
 
         self._restore_monitor_order()
         self.setup_dynamic_options()
+        self._setup_task_presets()
         self.clear_sub_cases()
         self._refresh_after_action_summary()
         self.on_program_settings_changed(self.settings_panel.program_settings())
@@ -1773,6 +1778,7 @@ class MainWindow(QMainWindow):
             self.after_action_panel.setEnabled(editable)
 
     def show_after_actions(self):
+        self._show_option_page(0)
         if self.isRunning or self._close_pending or self._completion_pending or self._closing:
             return
         self.clear_sub_cases(show_placeholder=False)
@@ -1998,7 +2004,7 @@ class MainWindow(QMainWindow):
             self.settings_panel.management.status.setText("작업·모니터링·관리 작업이 끝난 뒤 초기화하세요.")
             return
         if QMessageBox.question(self, "모든 설정 초기화",
-                                "작업 목록·세부 옵션·연결·경로·테마·창 배치·다중 실행 목록·완료 후 동작을 모두 초기화합니다.\n"
+                                "작업 목록·세부 옵션·프리셋·연결·경로·테마·창 배치·다중 실행 목록·완료 후 동작을 모두 초기화합니다.\n"
                                 "게임 리소스·OCR 모델·계정 백업은 보존합니다.\n초기화 후 앱이 종료되며, 다시 실행하면 기본값이 적용됩니다. 계속할까요?",
                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                 QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
@@ -2102,9 +2108,30 @@ class MainWindow(QMainWindow):
         task_title.setObjectName("workspaceSectionTitle")
         task_panel.findChild(QVBoxLayout, "settingStartWidget_1").insertWidget(0, task_title)
 
-        option_title = QLabel("세부 설정", option_panel)
-        option_title.setObjectName("workspaceSectionTitle")
-        option_panel.findChild(QVBoxLayout, "verticalLayout_5").insertWidget(0, option_title)
+        option_header = QWidget(option_panel)
+        option_header.setObjectName("optionSectionHeader")
+        option_header.setFixedHeight(24)
+        header_layout = QHBoxLayout(option_header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(10)
+        self.option_navigation = QButtonGroup(self)
+        self.option_navigation.setExclusive(True)
+        self.detail_tab_button = QPushButton("세부 설정")
+        self.preset_tab_button = QPushButton("프리셋")
+        for button, name in ((self.detail_tab_button, "detailTabButton"), (self.preset_tab_button, "presetTabButton")):
+            button.setObjectName(name)
+            button.setCheckable(True)
+            button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            self.option_navigation.addButton(button)
+        header_layout.addWidget(self.detail_tab_button)
+        separator = QFrame()
+        separator.setObjectName("detailTabSeparator")
+        separator.setFixedSize(1, 16)
+        header_layout.addWidget(separator)
+        header_layout.addWidget(self.preset_tab_button)
+        header_layout.addStretch(1)
+        option_panel.findChild(QVBoxLayout, "verticalLayout_5").insertWidget(0, option_header)
+        self._sync_option_navigation(0)
 
         log_layout = monitor_panel.findChild(QVBoxLayout, "logLayout")
         monitor_title = QLabel("모니터링", monitor_panel)
@@ -2946,6 +2973,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(label)
 
     def show_sub_cases(self, item_widget):
+        self._show_option_page(0)
         task_options = item_widget.task_options
 
         container_widget = self.ui.scrollSettingContents
@@ -3327,6 +3355,168 @@ class MainWindow(QMainWindow):
 
         if hasattr(self.ui, 'scrollSettingContents'):
             self.ui.scrollSettingContents.setEnabled(not controls_locked)
+        if hasattr(self, "preset_panel"):
+            self.preset_panel.set_editable(self._can_edit_task_presets())
+
+    def _show_option_page(self, index):
+        if 0 <= index < self.option_pages.count():
+            self.option_pages.setCurrentIndex(index)
+
+    def _sync_option_navigation(self, index):
+        self.detail_tab_button.setChecked(index == 0)
+        self.preset_tab_button.setChecked(index == 1)
+
+    def _setup_task_presets(self):
+        # QUiLoader의 중앙 위젯 소유권을 확정한 뒤 기존 스크롤 영역을 옮긴다.
+        # 그 전에 Python 스택으로 옮기면 setCentralWidget에서 로더 참조가 무효화된다.
+        option_panel = self.centralWidget().findChild(QWidget, "_2_settingWidget")
+        content_layout = option_panel.findChild(QVBoxLayout, "settingWidget_1")
+        content_layout.removeWidget(self.ui.scrollSettingWidget)
+        self.option_pages = QStackedWidget(option_panel)
+        self.option_pages.setObjectName("optionPages")
+        self.option_pages.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+        self.option_pages.addWidget(self.ui.scrollSettingWidget)
+        content_layout.addWidget(self.option_pages)
+        self.detail_tab_button.clicked.connect(lambda: self._show_option_page(0))
+        self.preset_tab_button.clicked.connect(lambda: self._show_option_page(1))
+        self.option_pages.currentChanged.connect(self._sync_option_navigation)
+        self.preset_panel = TaskPresetPanel(self.option_pages)
+        self.option_pages.addWidget(self.preset_panel)
+        setup_rounded_vertical_scrollbar(self.preset_panel.list,
+                                        surface_colors=("#F8FAFC", "#142035"))
+        self.preset_panel.save_requested.connect(self._save_task_preset)
+        self.preset_panel.replace_requested.connect(self._replace_task_preset)
+        self.preset_panel.apply_requested.connect(self._apply_task_preset)
+        self.preset_panel.delete_requested.connect(self._delete_task_preset)
+        self.preset_panel.show_presets(self.task_presets)
+        self._apply_option_editing_policy()
+
+    def _can_edit_task_presets(self):
+        startup = getattr(self, "app_startup", None)
+        return (not (self._closing or self._close_pending or self._completion_pending or self._reset_settings_pending)
+                and not (startup is not None and startup.active)
+                and (not self._options_locked or self._allow_option_edits_while_running))
+
+    def _preset_edit_allowed(self):
+        if self._can_edit_task_presets():
+            return True
+        self.preset_panel.show_status("현재는 작업 구성을 변경할 수 없습니다.", error=True)
+        return False
+
+    def _commit_task_presets(self, updated, selected_id):
+        previous, self.task_presets = self.task_presets, updated
+        if not self.save_user_config():
+            self.task_presets = previous
+            self.preset_panel.show_status("프리셋을 저장하지 못했습니다. 저장 공간과 권한을 확인하세요.", error=True)
+            return False
+        self.preset_panel.show_presets(updated, selected_id)
+        self.preset_panel.show_status("")
+        return True
+
+    def _save_task_preset(self, name):
+        if not self._preset_edit_allowed():
+            return False
+        if not name.strip():
+            number = 1
+            while any(preset["name"] == f"프리셋 {number}" for preset in self.task_presets):
+                number += 1
+            name = f"프리셋 {number}"
+        return self._write_task_preset(name)
+
+    def _write_task_preset(self, name, preset_id=None):
+        try:
+            name = clean_preset_name(name)
+            if any(preset["name"].casefold() == name.casefold() and preset["id"] != preset_id
+                   for preset in self.task_presets):
+                raise ValueError("같은 이름의 프리셋이 있습니다. 이름을 바꾸거나 덮어쓰기를 사용하세요.")
+            preset = make_task_preset(name, self._serialize_task_list(), self.runtime.interface, preset_id)
+        except ValueError as error:
+            self.preset_panel.show_status(str(error), error=True)
+            return False
+        updated = [preset if item["id"] == preset_id else item for item in self.task_presets]
+        if preset_id is None:
+            updated.append(preset)
+        return self._commit_task_presets(updated, preset["id"])
+
+    def _replace_task_preset(self, preset_id, name):
+        if not self._preset_edit_allowed():
+            return False
+        preset = next((preset for preset in self.task_presets if preset["id"] == preset_id), None)
+        if preset is None:
+            return False
+        if QMessageBox.question(self, "프리셋 덮어쓰기", f"'{preset['name']}' 프리셋을 현재 작업 구성으로 덮어쓸까요?",
+                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            return False
+        return self._preset_edit_allowed() and self._write_task_preset(name, preset_id)
+
+    def _delete_task_preset(self, preset_id):
+        if not self._preset_edit_allowed():
+            return False
+        preset = next((preset for preset in self.task_presets if preset["id"] == preset_id), None)
+        if preset is None:
+            return False
+        if QMessageBox.question(self, "프리셋 삭제", f"'{preset['name']}' 프리셋을 삭제할까요? 현재 작업 목록은 바뀌지 않습니다.",
+                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            return False
+        if not self._preset_edit_allowed():
+            return False
+        return self._commit_task_presets([item for item in self.task_presets if item["id"] != preset_id], "")
+
+    def _apply_task_preset(self, preset_id):
+        if not self._preset_edit_allowed():
+            return False
+        preset = next((preset for preset in self.task_presets if preset["id"] == preset_id), None)
+        if preset is None:
+            return False
+        tasks = self.runtime.interface.get("task", [])
+        by_name = {task["name"]: task for task in tasks}
+        by_entry = {}
+        for task in tasks:
+            by_entry.setdefault(task["entry"], task)
+        resolved, skipped, launch_checked, launch_seen = [], 0, False, False
+        for record in preset["tasks"]:
+            if record["name"] == PROGRAM_LAUNCH_TASK_NAME:
+                launch_checked, launch_seen = record["checked"], True
+                continue
+            task = by_name.get(record["name"]) or by_entry.get(record["entry"])
+            if task is None:
+                skipped += 1
+                continue
+            resolved.append((task, record["checked"], record["selected_options"]))
+        launch_enabled = self.settings_panel.program_launch_task_enabled()
+        launch_available = (launch_enabled and launch_seen
+                            and bool(self.settings_panel.program_settings().get("resolved_path")))
+        if not resolved and not launch_available:
+            self.preset_panel.show_status("현재 리소스에서 적용할 수 있는 작업이 없어 기존 목록을 유지합니다.", error=True)
+            return False
+        self.task_picker.hide()
+        self.clear_sub_cases()
+        self.option_list_widget.clear()
+        if launch_enabled:
+            self.add_task_widget(PROGRAM_LAUNCH_TASK, launch_checked)
+        for task, checked, options in resolved:
+            self.add_task_widget(task, checked, options)
+        self._apply_option_editing_policy()
+        self.check_start_button_state()
+        if not self.save_user_config():
+            self.preset_panel.show_status("프리셋은 적용했지만 현재 설정을 저장하지 못했습니다.", error=True)
+            return False
+        self.preset_panel.show_status(
+            f"현재 리소스에 없는 작업 {skipped}개는 제외했습니다." if skipped else "",
+            error=bool(skipped),
+        )
+        return True
+
+    def _serialize_task_list(self):
+        records = []
+        for row in range(self.option_list_widget.count()):
+            widget = self.option_list_widget.itemWidget(self.option_list_widget.item(row))
+            if widget is not None:
+                records.append({"name": widget.task_data["name"], "entry": widget.task_data["entry"],
+                                "checked": widget.is_checked(), "selected_options": widget.get_persisted_options()})
+        return records
 
     def set_runtime_option_editing_enabled(self, enabled: bool):
         """실행 중 전체 옵션 편집 정책을 즉시 적용한다."""
@@ -3373,30 +3563,19 @@ class MainWindow(QMainWindow):
 
     def save_user_config(self):
         if getattr(self, "_reset_settings_pending", False):
-            return  # A pending close must not overwrite freshly reset files.
+            return False  # A pending close must not overwrite freshly reset files.
         config_dir = self.runtime.user_dir / "config"
-        config_dir.mkdir(parents=True, exist_ok=True) # 폴더가 없으면 자동 생성
         config_path = config_dir / "user_config.json"
         
-        tasks_data = []
-        
-        for i in range(self.option_list_widget.count()):
-            item = self.option_list_widget.item(i)
-            widget = self.option_list_widget.itemWidget(item)
-            if widget:
-                tasks_data.append({
-                    "name": widget.task_data["name"],
-                    "entry": widget.task_data["entry"],
-                    "checked": widget.is_checked(),
-                    "selected_options": widget.get_persisted_options()
-                })
-                
+        tasks_data = self._serialize_task_list()
         try:
+            config_dir.mkdir(parents=True, exist_ok=True)
             temp_path = config_path.with_suffix(".tmp")
             with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(
                     {
                         "tasks": tasks_data,
+                        "task_presets": {"version": PRESET_VERSION, "items": self.task_presets},
                         "monitor_order": self.ui.monitorSectionsWidget.section_order(),
                         "monitor_height_weights": self.ui.monitorSectionsWidget.height_weights(),
                         "ui_state": self._capture_ui_state() if self._ui_state_ready else self._saved_ui_state,
@@ -3409,8 +3588,10 @@ class MainWindow(QMainWindow):
                 )
                 f.flush()
             temp_path.replace(config_path)
+            return True
         except Exception as e:
             print(f"설정 파일 저장 실패: {e}")
+            return False
 
 # 정지 요청 전용 스레드
 class StopWorker(QThread):

@@ -19,11 +19,14 @@ class UIGuidanceTests(unittest.TestCase):
         self.window.show()
         QApplication.processEvents()
 
-    def test_detail_pane_contains_only_the_intact_settings_scroll_area(self):
+    def test_detail_page_preserves_intact_settings_scroll_area_without_footer(self):
         self.assertIsNone(self.window.findChild(QLabel, "infoLabel"))
         layout = self.window.findChild(QVBoxLayout, "settingWidget_1")
         self.assertEqual(layout.count(), 1)
-        scroll = layout.itemAt(0).widget()
+        stack = layout.itemAt(0).widget()
+        self.assertIs(stack, self.window.option_pages)
+        scroll = stack.widget(0)
+        self.assertIs(stack.currentWidget(), scroll)
         self.assertEqual(scroll.objectName(), "scrollSettingWidget")
         self.assertEqual(scroll.widget().objectName(), "scrollSettingContents")
         self.assertTrue(scroll.widgetResizable())

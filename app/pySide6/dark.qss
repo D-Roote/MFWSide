@@ -112,6 +112,54 @@ QLabel#workspaceSectionTitle {
     color: #F0F6FD;
 }
 
+QPushButton#detailTabButton, QPushButton#presetTabButton {
+    color: #8CA0BA;
+}
+QPushButton#detailTabButton:checked, QPushButton#presetTabButton:checked {
+    color: #F0F6FD;
+}
+QPushButton#detailTabButton:hover, QPushButton#presetTabButton:hover,
+QPushButton#detailTabButton:focus, QPushButton#presetTabButton:focus {
+    color: #63D2F5;
+}
+QFrame#detailTabSeparator {
+    background-color: #405474;
+}
+QLabel#presetDescription, QLabel#presetStatus {
+    color: #AEBFD2;
+}
+QLabel#presetStatus[error="true"] {
+    color: #F08A94;
+}
+QLineEdit#presetNameInput {
+    background-color: #1E2D46;
+    color: #E5EDF6;
+    border-color: #405474;
+}
+QListWidget#taskPresetList {
+    background-color: #142035;
+    color: #DCE6F2;
+    border-color: #30415E;
+}
+QListWidget#taskPresetList::item:selected {
+    background-color: #243954;
+    color: #F0F6FD;
+}
+QPushButton#presetActionButton {
+    background-color: #223750;
+    color: #D8E6F4;
+    border-color: #405B78;
+}
+QPushButton#presetApplyButton {
+    background-color: #168FBE;
+    border-color: #168FBE;
+}
+QPushButton#presetActionButton:disabled, QPushButton#presetApplyButton:disabled {
+    background-color: #1C2E45;
+    color: #657E98;
+    border-color: #334B65;
+}
+
 QLabel#optionEmptyState {
     color: #8CA0BA;
 }
