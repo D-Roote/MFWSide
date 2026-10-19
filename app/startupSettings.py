@@ -30,6 +30,8 @@ def normalize_startup_config(raw):
         elif isinstance(default, str):
             if isinstance(value, str) and re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
                 result[key] = value
+        elif key == "task_wait_seconds" and type(value) is int and value >= 0:
+            result[key] = min(3600, value)
         elif type(value) is int and 0 <= value <= 3600:
             result[key] = value
     return result

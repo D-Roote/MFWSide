@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.runtime import WIN32_METHOD_DEFAULTS, WIN32_METHOD_PRIORITY
-from app.controls import NoWheelSpinBox, NoWheelTimeEdit, PopupOnlyWheelComboBox
+from app.controls import ClampedSecondsSpinBox, NoWheelSpinBox, NoWheelTimeEdit, PopupOnlyWheelComboBox
 from app.programTest import ProgramTestWorker
 from app.settingsNavigation import SETTINGS_SECTIONS, SettingsNavigation, normalize_section_order
 from app.managementUI import ManagementPanel
@@ -41,6 +41,7 @@ from app.pg_init import (
 )
 
 WIN32_MANUAL_PATH_DESCRIPTION = "비워 두면 자동 검색 결과를 사용합니다. 폴더 또는 실행 파일을 지정할 수 있습니다."
+STARTUP_TIME_INPUT_WIDTH = 120
 ADB_MANUAL_PATH_DESCRIPTION = (
     '실행 디바이스의 바로가기 생성 후, 우클릭-속성-바로 가기 탭 의 "대상"을 복사하여 사용합니다.'
 )
@@ -341,15 +342,21 @@ class SettingsPanel(QWidget):
         for key, title, description in (
             ("launch_on_login", "", "현재 Windows 사용자 로그인 시 이 앱을 실행합니다."),
             ("minimize_app", "", "앱을 실행한 뒤 이 앱의 창을 최소화합니다."),
-            ("auto_start_tasks", "", "설정을 복원한 뒤 시작 탭에서 선택한 작업을 한 번 실행합니다."),
+            ("auto_start_tasks", "", "앱을 실행된 후 현재 작업을 자동으로 실행합니다."),
             ("launch_program", "", "아래 경로로 프로그램을 실행합니다. ADB에서는 앱플레이어를 실행하며 게임 앱은 파이프라인에서 실행합니다."),
         ):
             checkbox = QCheckBox()
             checkbox.setObjectName("settingsCheckbox")
             checkbox.setAccessibleName(title)
             self.startup_checkboxes[key] = checkbox
+            control = checkbox
+            if key == "auto_start_tasks":
+                self.auto_start_wait_spin = ClampedSecondsSpinBox()
+                self.auto_start_wait_spin.setSuffix(" 초")
+                self.auto_start_wait_spin.setAccessibleName("작업 자동 시작 대기 시간")
+                control = self._startup_time_controls(self.auto_start_wait_spin, checkbox)
             self.startup_rows[key] = self._add_setting_row(
-                program_layout, title, description, checkbox, control_right_margin=12)
+                program_layout, title, description, control, control_right_margin=12)
             if key == "launch_on_login":
                 self.startup_registration_status = QLabel()
                 self.startup_registration_status.setObjectName("settingsRowDescription")
@@ -358,32 +365,15 @@ class SettingsPanel(QWidget):
                 self.startup_registration_status.hide()
                 program_layout.addWidget(self.startup_registration_status)
             if key == "auto_start_tasks":
-                self.auto_start_wait_spin = NoWheelSpinBox()
-                self.auto_start_wait_spin.setObjectName("settingsSpinBox")
-                self.auto_start_wait_spin.setRange(0, 3600)
-                self.auto_start_wait_spin.setSuffix(" 초")
-                self.auto_start_wait_row = self._add_setting_row(
-                    program_layout,
-                    "자동 시작 대기 시간",
-                    "작업 시작 전 대기 시간을 설정합니다. 최대 3600초까지 지정할 수 있습니다.",
-                    self.auto_start_wait_spin,
-                )
-                self.auto_start_wait_spin.setAccessibleName("작업 자동 시작 대기 시간")
-                daily_controls = QWidget()
-                daily_layout = QHBoxLayout(daily_controls)
-                daily_layout.setContentsMargins(0, 0, 0, 0)
-                daily_layout.setSpacing(14)
                 self.daily_restart_time = NoWheelTimeEdit()
-                self.daily_restart_time.setObjectName("settingsSpinBox")
                 self.daily_restart_time.setDisplayFormat("HH:mm")
                 self.daily_restart_time.setAccessibleName("일일 초기화 시간")
-                self.daily_restart_time.setToolTip("시스템 시간 기준입니다. 지정한 시각에서 1분 뒤에 재시작합니다.")
+                self.daily_restart_time.setToolTip("시스템 시간 기준입니다.")
                 daily_checkbox = QCheckBox()
                 daily_checkbox.setObjectName("settingsCheckbox")
                 daily_checkbox.setAccessibleName("일일 초기화 재시작")
                 self.startup_checkboxes["daily_restart"] = daily_checkbox
-                daily_layout.addWidget(self.daily_restart_time)
-                daily_layout.addWidget(daily_checkbox)
+                daily_controls = self._startup_time_controls(self.daily_restart_time, daily_checkbox)
                 self.startup_rows["daily_restart"] = self._add_setting_row(
                     program_layout, "일일 초기화 재시작",
                     "설정한 일일 초기화 시간에 맞춰 대상 프로그램 재실행 및 작업을 다시 수행합니다.",
@@ -601,6 +591,18 @@ class SettingsPanel(QWidget):
         return section, layout
 
     @staticmethod
+    def _startup_time_controls(editor, checkbox):
+        editor.setObjectName("settingsSpinBox")
+        editor.setFixedWidth(STARTUP_TIME_INPUT_WIDTH)
+        controls = QWidget()
+        layout = QHBoxLayout(controls)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(14)
+        layout.addWidget(editor)
+        layout.addWidget(checkbox)
+        return controls
+
+    @staticmethod
     def _add_section_divider(layout):
         divider = QFrame()
         divider.setObjectName("settingsDivider")
@@ -626,7 +628,8 @@ class SettingsPanel(QWidget):
         row_layout.setVerticalSpacing(2)
         row_layout.setColumnStretch(0, 1)
 
-        label_type = AssociatedControlLabel if isinstance(control, QCheckBox) else QLabel
+        toggle = control if isinstance(control, QCheckBox) else control.findChild(QCheckBox)
+        label_type = AssociatedControlLabel if toggle is not None else QLabel
         title_label = label_type(title)
         title_label.setObjectName("settingsRowTitle")
         title_label.setTextFormat(Qt.TextFormat.PlainText)
@@ -634,9 +637,9 @@ class SettingsPanel(QWidget):
         description_label.setObjectName("settingsRowDescription")
         description_label.setWordWrap(True)
 
-        if isinstance(control, QCheckBox):
-            title_label.activated.connect(control.click)
-            description_label.activated.connect(control.click)
+        if toggle is not None:
+            title_label.activated.connect(toggle.click)
+            description_label.activated.connect(toggle.click)
 
         control.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         row_layout.addWidget(title_label, 0, 0)

@@ -33,7 +33,8 @@ class StartupSettingsBackendTests(unittest.TestCase):
         for value in (0, 15, 3600):
             with self.subTest(value=value):
                 self.assertEqual(normalize_startup_config({"task_wait_seconds": value})["task_wait_seconds"], value)
-        for value in (-1, 3601, True, 1.5, "15", None):
+        self.assertEqual(normalize_startup_config({"task_wait_seconds": 3601})["task_wait_seconds"], 3600)
+        for value in (-1, True, 1.5, "15", None):
             with self.subTest(invalid=value):
                 self.assertEqual(normalize_startup_config({"task_wait_seconds": value})["task_wait_seconds"], 0)
 
@@ -145,27 +146,29 @@ class StartupSettingsUITests(unittest.TestCase):
         self.assertLess(layout.indexOf(panel.startup_rows["launch_program"]), layout.indexOf(panel.program_path_divider))
         self.assertLess(layout.indexOf(panel.program_path_divider), layout.indexOf(panel.program_auto_status))
 
-    def test_auto_task_wait_row_is_always_visible_and_restores_saved_value(self):
-        self.assertFalse(self.panel.auto_start_wait_row.isHidden())
-        description = self.panel.auto_start_wait_row.description_label.text()
-        self.assertNotIn("0초는 즉시 시작", description)
-        self.assertIn("최대 3600초", description)
+    def test_auto_task_wait_is_integrated_and_restores_saved_value(self):
+        self.assertFalse(hasattr(self.panel, "auto_start_wait_row"))
+        auto_row = self.panel.startup_rows["auto_start_tasks"]
+        description = auto_row.description_label.text()
+        self.assertEqual(description, "앱을 실행된 후 현재 작업을 자동으로 실행합니다.")
+        self.assertNotIn("3600", description)
         self.assertEqual(self.panel.auto_start_wait_spin.maximum(), 3600)
         self.panel.startup_checkboxes["auto_start_tasks"].setChecked(True)
-        self.assertFalse(self.panel.auto_start_wait_row.isHidden())
+        self.assertFalse(self.panel.auto_start_wait_spin.isHidden())
         self.panel.auto_start_wait_spin.setValue(15)
         self.panel.startup_checkboxes["auto_start_tasks"].setChecked(False)
-        self.assertFalse(self.panel.auto_start_wait_row.isHidden())
+        self.assertFalse(self.panel.auto_start_wait_spin.isHidden())
         with patch("app.winUI.AppRuntime", return_value=self.window.runtime):
             restored = fixtures.MainWindow()
         self.addCleanup(restored.deleteLater)
         panel = restored.settings_panel
         self.assertFalse(panel.startup_checkboxes["auto_start_tasks"].isChecked())
-        self.assertFalse(panel.auto_start_wait_row.isHidden())
+        self.assertFalse(panel.auto_start_wait_spin.isHidden())
         self.assertEqual(panel.auto_start_wait_spin.value(), 15)
         layout = self.panel._section_widgets["program"].layout()
-        auto_row = self.panel.startup_checkboxes["auto_start_tasks"].parentWidget()
-        self.assertEqual(layout.indexOf(self.panel.auto_start_wait_row), layout.indexOf(auto_row) + 1)
+        self.assertIs(self.panel.auto_start_wait_spin.parentWidget(),
+                      self.panel.startup_checkboxes["auto_start_tasks"].parentWidget())
+        self.assertEqual(layout.indexOf(self.panel.startup_rows["daily_restart"]), layout.indexOf(auto_row) + 1)
 
     def test_static_startup_guidance_is_in_section_description_not_status(self):
         description = self.panel._section_widgets["program"].description_label.text()
