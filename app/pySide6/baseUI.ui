@@ -92,7 +92,7 @@
       <widget class="QWidget" name="mainTab">
        <layout class="QHBoxLayout" name="horizontalLayout">
         <property name="spacing">
-         <number>14</number>
+         <number>10</number>
         </property>
         <property name="leftMargin">
          <number>20</number>

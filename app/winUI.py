@@ -2099,6 +2099,8 @@ class MainWindow(QMainWindow):
         monitor_panel.setMinimumWidth(309)
         splitter = self.ui.workspaceSplitter
         splitter.setHandleWidth(10)
+        # The fixed task panel needs the same gap as the resizable panels.
+        self.ui.mainTab.layout().setSpacing(splitter.handleWidth())
         splitter.setChildrenCollapsible(False)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
@@ -3068,6 +3070,11 @@ class MainWindow(QMainWindow):
                 combo_box.setObjectName("optionSelect")
                 combo_box.setProperty("optionName", opt_name)
                 combo_box.setAccessibleName(opt.get("label", opt_name))
+                # Long option labels must not widen the scrollable detail panel.
+                combo_box.setSizeAdjustPolicy(
+                    PopupOnlyWheelComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+                )
+                combo_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
                 combo_box.ensurePolished()
                 popup = QListView(combo_box)
                 popup.setObjectName("optionSelectPopup")

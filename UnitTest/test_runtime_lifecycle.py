@@ -3026,7 +3026,7 @@ class UILifecycleTests(unittest.TestCase):
                 page.width() - end(columns[2]),
             )
             with self.subTest(width=width):
-                self.assertEqual(gaps, (20, 14, 10, 20))
+                self.assertEqual(gaps, (20, 10, 10, 20))
                 self.assertEqual(columns[0].width(), 312)
                 self.assertGreaterEqual(columns[1].width(), 300)
                 self.assertGreaterEqual(columns[2].width(), 309)

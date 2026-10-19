@@ -1,10 +1,12 @@
-"""Expanded preview must fit the monitor viewport, including long status text."""
+"""Dashboard gaps and scrollable content must fit even at minimum width."""
+import os
+from pathlib import Path
 import unittest
 
 import test_runtime_lifecycle as ui_fixtures
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QApplication, QToolButton
+from PySide6.QtWidgets import QApplication, QComboBox, QToolButton, QWidget
 
 
 class MonitorPreviewLayoutTests(unittest.TestCase):
@@ -67,3 +69,54 @@ class MonitorPreviewLayoutTests(unittest.TestCase):
         self.window.ui.workspaceSplitter.setSizes([900, 309])
         toggle.setChecked(True)
         self.assert_fits_viewport()
+
+    def assert_workspace_gaps_match(self):
+        ui = self.window.ui
+        left = ui.mainTab.findChild(QWidget, "_1_settingStartWidget")
+        middle, right = ui.workspaceSplitter.widget(0), ui.workspaceSplitter.widget(1)
+        left_gap = middle.mapTo(ui.mainTab, QPoint()).x() - left.mapTo(ui.mainTab, QPoint()).x() - left.width()
+        right_gap = right.mapTo(ui.mainTab, QPoint()).x() - middle.mapTo(ui.mainTab, QPoint()).x() - middle.width()
+        self.assertEqual(left_gap, right_gap)
+        self.assertEqual(right_gap, ui.workspaceSplitter.handleWidth())
+        self.assertEqual(left.width(), 312)
+        self.assertGreaterEqual(middle.width(), 300)
+        self.assertGreaterEqual(right.width(), 309)
+
+    def test_equal_workspace_gaps_survive_theme_minimum_width_and_splitter_moves(self):
+        for theme in ("light", "dark"):
+            self.window.settings_panel.theme_combo.setCurrentIndex(self.window.settings_panel.theme_combo.findData(theme))
+            for width in (self.window.minimumWidth(), 1100, 1400):
+                self.window.resize(width, 780)
+                for sizes in ([900, 309], [300, 900]):
+                    self.window.ui.workspaceSplitter.setSizes(sizes)
+                    QApplication.processEvents()
+                    self.assert_workspace_gaps_match()
+                    self.assertEqual(self.window.width(), width)
+                    self.assert_fits_viewport()
+            directory = os.environ.get("MAABA_UI_PREVIEW_DIR")
+            if directory:
+                Path(directory).mkdir(parents=True, exist_ok=True)
+                self.window.ui.mainTab.grab().save(str(Path(directory) / f"workspace_gaps_{theme}.png"))
+
+    def test_minimum_width_details_and_preview_never_gain_horizontal_scroll(self):
+        window = self.window
+        window.show_sub_cases(self.fixture.find_task_widget(window))
+        combos = window.ui.scrollSettingContents.findChildren(QComboBox, "optionSelect")
+        self.assertTrue(combos)
+        for combo in combos:
+            self.assertGreater(combo.count(), 0)
+            combo.setItemText(0, "긴 세부 설정 선택 항목 " * 20)
+        self.screen.status.setText("출력 프레임이 낮습니다. 목표 프레임을 낮추세요. " * 8)
+        for theme in ("light", "dark"):
+            window.settings_panel.theme_combo.setCurrentIndex(window.settings_panel.theme_combo.findData(theme))
+            window.resize(window.minimumWidth(), 700)
+            QApplication.processEvents()
+            self.assert_workspace_gaps_match()
+            self.assert_fits_viewport()
+            scroll = window.ui.scrollSettingWidget
+            self.assertEqual(scroll.horizontalScrollBar().maximum(), 0)
+            self.assertLessEqual(scroll.widget().width(), scroll.viewport().width())
+            directory = os.environ.get("MAABA_UI_PREVIEW_DIR")
+            if directory:
+                Path(directory).mkdir(parents=True, exist_ok=True)
+                window.ui.mainTab.grab().save(str(Path(directory) / f"workspace_minimum_{theme}.png"))
