@@ -1,5 +1,5 @@
 """Shared small controls for explicit, safe configuration changes."""
-from PySide6.QtWidgets import QComboBox, QSpinBox
+from PySide6.QtWidgets import QComboBox, QSpinBox, QTimeEdit
 
 
 class PopupOnlyWheelComboBox(QComboBox):
@@ -14,5 +14,10 @@ class PopupOnlyWheelComboBox(QComboBox):
 
 
 class NoWheelSpinBox(QSpinBox):
+    def wheelEvent(self, event):
+        event.ignore()
+
+
+class NoWheelTimeEdit(QTimeEdit):
     def wheelEvent(self, event):
         event.ignore()

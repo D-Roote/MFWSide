@@ -27,14 +27,22 @@ QPushButton#startupCancelButton:disabled, QPushButton#startupNowButton:disabled 
     border-color: #334B65;
 }
 
-QSpinBox#settingsSpinBox {
+QSpinBox#settingsSpinBox,
+QTimeEdit#settingsSpinBox {
     background-color: #142035;
     color: #DCE6F2;
     border-color: #30415E;
 }
 QSpinBox#settingsSpinBox:hover,
-QSpinBox#settingsSpinBox:focus {
+QSpinBox#settingsSpinBox:focus,
+QTimeEdit#settingsSpinBox:hover,
+QTimeEdit#settingsSpinBox:focus {
     border-color: #38BDF8;
+}
+QTimeEdit#settingsSpinBox:disabled,
+QLabel#settingsRowTitle:disabled,
+QLabel#settingsRowDescription:disabled {
+    color: #657E98;
 }
 QTreeWidget#storageUsageTree {
     background-color: #142035;

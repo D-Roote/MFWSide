@@ -119,6 +119,9 @@ class AppStartupCoordinator(QObject):
         try:
             self.queue = deepcopy(self.window.build_execution_queue())
             program = panel.program_settings()
+            if not program.get("resolved_path"):
+                self._status("실행 경로가 없어 시작 자동 실행을 생략했습니다.")
+                return
         except (KeyError, ValueError, TypeError) as error:
             self._status(f"시작 설정을 확인하세요: {error}")
             return

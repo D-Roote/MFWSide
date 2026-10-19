@@ -39,6 +39,7 @@ from app.afterActionUI import AfterActionPanel, AdbAppStopWorker
 from app.adbAppStop import AdbAppStopTarget, capture_adb_app_stop_target
 from app.storageManagement import reset_settings_files
 from app.appStartup import AppStartupCoordinator
+from app.dailyRestartUI import DailyRestartCoordinator
 from app.presetUI import TaskPresetPanel
 from app.taskPresets import PRESET_VERSION, clean_preset_name, make_task_preset, normalize_task_presets
 from app.identity import DEFAULT_APP_NAME, interface_titles, log_filename_stem
@@ -1702,6 +1703,9 @@ class MainWindow(QMainWindow):
         self.check_start_button_state()
         self._restore_ui_state()
         self._ui_state_ready = True
+        self.daily_restart = DailyRestartCoordinator(self)
+        self.daily_restart.activity_changed.connect(self._startup_activity_changed)
+        self.daily_restart.shutdown_ready.connect(self._finish_pending_close)
         if getattr(self.runtime, "interface_missing", False) is True:
             self.append_log("interface.json이 없습니다. 기본 Win32 설정 UI를 표시하며 작업 실행은 비활성화됩니다.")
 
@@ -1978,6 +1982,7 @@ class MainWindow(QMainWindow):
                     or self._completion_pending or self._closing or self._close_pending
                     or self.settings_panel.management.busy
                     or (hasattr(self, "app_startup") and self.app_startup.active)
+                    or (hasattr(self, "daily_restart") and self.daily_restart.active)
                     or not self.multi_panel.ready_to_close or self.monitor.pending_start is not None)
 
     def _can_manage_data(self):
@@ -2475,7 +2480,7 @@ class MainWindow(QMainWindow):
         return True
 
     def on_task_start(self):
-        if self.app_startup.active:
+        if self.app_startup.active or (hasattr(self, "daily_restart") and self.daily_restart.active):
             return
         if self.settings_panel.program_test_busy or self.settings_panel.management.busy:
             return
@@ -2544,6 +2549,10 @@ class MainWindow(QMainWindow):
         self._refresh_after_action_summary()
 
     def on_task_stop(self):
+        if (hasattr(self, "daily_restart") and self.daily_restart.active
+                and not self.daily_restart.stopping_tasks and not self._closing):
+            self.daily_restart.cancel()
+            return
         self._run_stop_requested = True
         self.ui.workStartBtn.setEnabled(False)
 
@@ -2621,7 +2630,8 @@ class MainWindow(QMainWindow):
         program_test_ready = self.settings_panel.shutdown_program_test()
         management_ready = self.settings_panel.management.shutdown()
         startup_ready = self.app_startup.shutdown()
-        if worker_running or stop_running or app_stop_running or not program_test_ready or not management_ready or not startup_ready or not self.monitor.ready_to_close or not self.multi_panel.ready_to_close:
+        daily_ready = self.daily_restart.shutdown()
+        if worker_running or stop_running or app_stop_running or not program_test_ready or not management_ready or not startup_ready or not daily_ready or not self.monitor.ready_to_close or not self.multi_panel.ready_to_close:
             self._close_pending = True
             event.ignore()
             if worker_running:
@@ -2660,6 +2670,7 @@ class MainWindow(QMainWindow):
                 and not self.settings_panel.program_test_busy
                 and not self.settings_panel.management.busy
                 and self.app_startup.ready_to_close
+                and self.daily_restart.ready_to_close
                 and self.monitor.ready_to_close and self.multi_panel.ready_to_close):
             self._close_pending = False
             QTimer.singleShot(0, self.close)
@@ -3283,7 +3294,8 @@ class MainWindow(QMainWindow):
     def check_start_button_state(self):
         self.settings_panel.set_program_test_allowed(self._can_test_program())
         self.settings_panel.management.set_allowed(self._can_manage_data())
-        if self.app_startup.active and not self.isRunning and not self._closing:
+        daily_active = hasattr(self, "daily_restart") and self.daily_restart.active
+        if (self.app_startup.active or daily_active) and not self._closing:
             self.ui.workStartBtn.setEnabled(False)
             return
         if (self.settings_panel.program_test_busy or self.settings_panel.management.busy) and not self.isRunning:
@@ -3392,8 +3404,10 @@ class MainWindow(QMainWindow):
 
     def _can_edit_task_presets(self):
         startup = getattr(self, "app_startup", None)
+        daily = getattr(self, "daily_restart", None)
         return (not (self._closing or self._close_pending or self._completion_pending or self._reset_settings_pending)
                 and not (startup is not None and startup.active)
+                and not (daily is not None and daily.active)
                 and (not self._options_locked or self._allow_option_edits_while_running))
 
     def _preset_edit_allowed(self):

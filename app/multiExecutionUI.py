@@ -246,7 +246,8 @@ class InstanceCard(QFrame):
         self.status.setToolTip("\n".join(details))
         self.target_combo.setToolTip(self.target_combo.currentText())
         editable = (not session.active and not self.panel.window.isRunning and not self.panel.closing
-                    and self.panel.discovery_worker is None and not self.panel.window._completion_pending)
+                    and self.panel.discovery_worker is None and not self.panel.window._completion_pending
+                    and not self.panel.daily_active)
         for control in (self.preset_combo, self.target_combo, self.adb_path, self.address, self.emulator_combo,
                         self.discover_button, self.check_button, self.start_button):
             control.setEnabled(editable)
@@ -322,6 +323,14 @@ class MultiExecutionPanel(QWidget):
     def default_preferences(self):
         return normalize_connection_preferences(self.window.settings_panel.config.get("connection"))
 
+    def snapshot_for_session(self, session_id):
+        return self.window.multi_execution_snapshot()
+
+    @property
+    def daily_active(self):
+        daily = getattr(self.window, "daily_restart", None)
+        return daily is not None and daily.active
+
     def report_status(self, message):
         self.window.append_log(f"[다중 실행] {message}")
 
@@ -351,7 +360,7 @@ class MultiExecutionPanel(QWidget):
             self.manager.remove(session_id)
 
     def start_sessions(self, ids, mode="run", snapshot=None):
-        if self.window.settings_panel.program_test_busy or self.window.settings_panel.management.busy or self.window.app_startup.active:
+        if self.window.settings_panel.program_test_busy or self.window.settings_panel.management.busy or self.window.app_startup.active or self.daily_active:
             self.report_status("프로그램 실행 테스트가 끝난 뒤 다시 시도하세요.")
             return
         if self.window.isRunning or self.closing or self.window._completion_pending or self.discovery_worker is not None:
@@ -388,7 +397,7 @@ class MultiExecutionPanel(QWidget):
                 break
 
     def discover(self, session_id=None):
-        if self.window.settings_panel.program_test_busy or self.window.settings_panel.management.busy or self.window.app_startup.active:
+        if self.window.settings_panel.program_test_busy or self.window.settings_panel.management.busy or self.window.app_startup.active or self.daily_active:
             return
         if self.discovery_worker is not None or self.window.isRunning or self.closing or self.window._completion_pending:
             return
@@ -461,7 +470,7 @@ class MultiExecutionPanel(QWidget):
 
     def refresh(self):
         busy = self.window.isRunning or self.closing or self.window._completion_pending or self.discovery_worker is not None
-        busy = busy or self.window.settings_panel.program_test_busy or self.window.settings_panel.management.busy or self.window.app_startup.active
+        busy = busy or self.window.settings_panel.program_test_busy or self.window.settings_panel.management.busy or self.window.app_startup.active or self.daily_active
         self.start_all.setEnabled(not busy and bool(self.manager.sessions))
         self.stop_all.setEnabled(self.manager.active)
         self.add_button.setEnabled(not busy)

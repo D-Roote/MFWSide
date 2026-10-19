@@ -70,8 +70,11 @@ class InterfaceTitleUITests(unittest.TestCase):
         window._apply_interface_titles()
         panel = window.settings_panel
         self.assertIn("다음 별도 실행 앱 실행", panel.startup_section.description_label.text())
-        for row in panel.startup_rows.values():
-            self.assertIn("별도 실행 앱", row.title_label.text())
+        for key, row in panel.startup_rows.items():
+            if key == "daily_restart":
+                self.assertEqual(row.title_label.text(), "일일 초기화 재시작")
+            else:
+                self.assertIn("별도 실행 앱", row.title_label.text())
             self.assertNotIn("MAABA", row.title_label.text())
         window.after_actions.update("close_maa", True)
         window.show_after_actions()

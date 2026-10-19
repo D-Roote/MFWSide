@@ -2,7 +2,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QEasingCurve, QPropertyAnimation, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import QEvent, QEasingCurve, QPropertyAnimation, Qt, QTime, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.runtime import WIN32_METHOD_DEFAULTS, WIN32_METHOD_PRIORITY
-from app.controls import NoWheelSpinBox, PopupOnlyWheelComboBox
+from app.controls import NoWheelSpinBox, NoWheelTimeEdit, PopupOnlyWheelComboBox
 from app.programTest import ProgramTestWorker
 from app.settingsNavigation import SETTINGS_SECTIONS, SettingsNavigation, normalize_section_order
 from app.managementUI import ManagementPanel
@@ -200,6 +200,7 @@ class SettingsPanel(QWidget):
     program_changed = Signal(object)
     program_test_busy_changed = Signal(bool)
     program_test_shutdown_ready = Signal()
+    startup_changed = Signal()
 
     def __init__(
         self,
@@ -233,6 +234,8 @@ class SettingsPanel(QWidget):
         self._apply_config()
         self._connect_controls()
         self._controls_connected = True
+        if self.startup_settings() != self.config["startup"]:
+            self._save()
         QTimer.singleShot(0, lambda: self._sync_navigation_to_scroll(0))
 
     @staticmethod
@@ -366,6 +369,27 @@ class SettingsPanel(QWidget):
                     self.auto_start_wait_spin,
                 )
                 self.auto_start_wait_spin.setAccessibleName("작업 자동 시작 대기 시간")
+                daily_controls = QWidget()
+                daily_layout = QHBoxLayout(daily_controls)
+                daily_layout.setContentsMargins(0, 0, 0, 0)
+                daily_layout.setSpacing(14)
+                self.daily_restart_time = NoWheelTimeEdit()
+                self.daily_restart_time.setObjectName("settingsSpinBox")
+                self.daily_restart_time.setDisplayFormat("HH:mm")
+                self.daily_restart_time.setAccessibleName("일일 초기화 시간")
+                self.daily_restart_time.setToolTip("시스템 시간 기준입니다. 지정한 시각에서 1분 뒤에 재시작합니다.")
+                daily_checkbox = QCheckBox()
+                daily_checkbox.setObjectName("settingsCheckbox")
+                daily_checkbox.setAccessibleName("일일 초기화 재시작")
+                self.startup_checkboxes["daily_restart"] = daily_checkbox
+                daily_layout.addWidget(self.daily_restart_time)
+                daily_layout.addWidget(daily_checkbox)
+                self.startup_rows["daily_restart"] = self._add_setting_row(
+                    program_layout, "일일 초기화 재시작",
+                    "설정한 일일 초기화 시간에 맞춰 대상 프로그램 재실행 및 작업을 다시 수행합니다.",
+                    daily_controls, control_right_margin=12)
+                row = self.startup_rows["daily_restart"]
+                row.title_label.setBuddy(daily_checkbox)
         self.program_path_divider = self._add_section_divider(program_layout)
         self.program_path_title = QLabel("프로그램 경로 설정")
         self.program_path_title.setObjectName("settingsRowTitle")
@@ -605,6 +629,7 @@ class SettingsPanel(QWidget):
         label_type = AssociatedControlLabel if isinstance(control, QCheckBox) else QLabel
         title_label = label_type(title)
         title_label.setObjectName("settingsRowTitle")
+        title_label.setTextFormat(Qt.TextFormat.PlainText)
         description_label = label_type(description)
         description_label.setObjectName("settingsRowDescription")
         description_label.setWordWrap(True)
@@ -650,6 +675,7 @@ class SettingsPanel(QWidget):
         for key, checkbox in self.startup_checkboxes.items():
             checkbox.setChecked(startup[key])
         self.auto_start_wait_spin.setValue(startup["task_wait_seconds"])
+        self.daily_restart_time.setTime(QTime.fromString(startup["daily_restart_time"], "HH:mm"))
         self.startup_wait_spin.setValue(startup["emulator_wait_seconds"])
         self.restart_connection_checkbox.setChecked(startup["restart_on_connection_failure"])
         try:
@@ -722,6 +748,7 @@ class SettingsPanel(QWidget):
         self.restart_connection_checkbox.toggled.connect(self._save)
         self.startup_wait_spin.valueChanged.connect(self._save)
         self.auto_start_wait_spin.valueChanged.connect(self._save)
+        self.daily_restart_time.timeChanged.connect(self._save)
         self.program_extra_input.textChanged.connect(self._on_extra_arguments_changed)
         for section in self._sections:
             self._watch_section_interactions(section)
@@ -754,7 +781,8 @@ class SettingsPanel(QWidget):
         return {**{key: checkbox.isChecked() for key, checkbox in self.startup_checkboxes.items()},
                 "restart_on_connection_failure": self.restart_connection_checkbox.isChecked(),
                 "emulator_wait_seconds": self.startup_wait_spin.value(),
-                "task_wait_seconds": self.auto_start_wait_spin.value()}
+                "task_wait_seconds": self.auto_start_wait_spin.value(),
+                "daily_restart_time": self.daily_restart_time.time().toString("HH:mm")}
 
     def _on_startup_changed(self, key, checked):
         if key == "launch_on_login":
@@ -888,6 +916,7 @@ class SettingsPanel(QWidget):
         self._sync_launch_requirements()
         self.config = self._collect_config()
         self.store.save(self.config)
+        self.startup_changed.emit()
 
     def _sync_launch_requirements(self):
         available = bool(self.program_settings().get("resolved_path"))

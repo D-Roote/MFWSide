@@ -2976,9 +2976,8 @@ class UILifecycleTests(unittest.TestCase):
                 expected_bottom = (
                     0 if last_widget is row else expected_padding
                 )
-                expected_right = (
-                    12 if isinstance(row.layout().itemAtPosition(0, 1).widget(), QCheckBox) else 0
-                )
+                control = row.layout().itemAtPosition(0, 1).widget()
+                expected_right = 12 if isinstance(control, QCheckBox) or control.findChildren(QCheckBox) else 0
                 self.assertEqual(
                     (
                         row_margins.top(),

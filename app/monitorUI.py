@@ -350,7 +350,9 @@ class MonitorCoordinator(QObject):
 
     def _sync(self):
         startup = getattr(self.window, "app_startup", None)
-        management_busy = self.window.settings_panel.management.busy or (startup is not None and startup.active)
+        daily = getattr(self.window, "daily_restart", None)
+        management_busy = (self.window.settings_panel.management.busy or (startup is not None and startup.active)
+                           or (daily is not None and daily.active))
         multi = getattr(self.window, "multi_panel", None)
         multi_active = multi is not None and not multi.ready_to_close
         status = "작업 실행 중 화면은 실행 컨트롤러로 캡처합니다. 대상 변경은 종료 후 가능합니다." if self.window.isRunning else self.status
@@ -447,6 +449,11 @@ class MonitorCoordinator(QObject):
         self.capture_frame()
 
     def capture_frame(self):
+        daily = getattr(self.window, "daily_restart", None)
+        if daily is not None and daily.active:
+            if self.streaming:
+                self.preview_timer.start(250)
+            return
         if self.busy or self.shutting_down or self.pending_start is not None:
             return
         running = self.window.isRunning

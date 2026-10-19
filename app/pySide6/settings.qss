@@ -69,7 +69,8 @@ QMessageBox QPushButton:hover,
 QMessageBox QPushButton:focus {
     border-color: #00AEEF;
 }
-QSpinBox#settingsSpinBox {
+QSpinBox#settingsSpinBox,
+QTimeEdit#settingsSpinBox {
     background-color: #FFFFFF;
     color: #334155;
     border: 1px solid #CBD5E0;
@@ -79,10 +80,13 @@ QSpinBox#settingsSpinBox {
     min-height: 20px;
 }
 QSpinBox#settingsSpinBox:hover,
-QSpinBox#settingsSpinBox:focus {
+QSpinBox#settingsSpinBox:focus,
+QTimeEdit#settingsSpinBox:hover,
+QTimeEdit#settingsSpinBox:focus {
     border-color: #00AEEF;
 }
-QSpinBox#settingsSpinBox::up-button {
+QSpinBox#settingsSpinBox::up-button,
+QTimeEdit#settingsSpinBox::up-button {
     subcontrol-origin: border;
     subcontrol-position: top right;
     width: 20px;
@@ -90,7 +94,8 @@ QSpinBox#settingsSpinBox::up-button {
     border: none;
     border-top-right-radius: 6px;
 }
-QSpinBox#settingsSpinBox::down-button {
+QSpinBox#settingsSpinBox::down-button,
+QTimeEdit#settingsSpinBox::down-button {
     subcontrol-origin: border;
     subcontrol-position: bottom right;
     width: 20px;
@@ -98,15 +103,22 @@ QSpinBox#settingsSpinBox::down-button {
     border: none;
     border-bottom-right-radius: 6px;
 }
-QSpinBox#settingsSpinBox::up-arrow {
+QSpinBox#settingsSpinBox::up-arrow,
+QTimeEdit#settingsSpinBox::up-arrow {
     image: url("maabaicons:actions/chevron-up.svg");
     width: 12px;
     height: 12px;
 }
-QSpinBox#settingsSpinBox::down-arrow {
+QSpinBox#settingsSpinBox::down-arrow,
+QTimeEdit#settingsSpinBox::down-arrow {
     image: url("maabaicons:actions/chevron-down.svg");
     width: 12px;
     height: 12px;
+}
+QTimeEdit#settingsSpinBox:disabled,
+QLabel#settingsRowTitle:disabled,
+QLabel#settingsRowDescription:disabled {
+    color: #94A3B8;
 }
 QTreeWidget#storageUsageTree {
     background-color: #F8FAFC;

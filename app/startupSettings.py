@@ -2,6 +2,7 @@
 from hashlib import sha256
 from pathlib import Path
 import os
+import re
 import subprocess
 import sys
 
@@ -14,6 +15,8 @@ DEFAULT_STARTUP_CONFIG = {
     "restart_on_connection_failure": False,
     "emulator_wait_seconds": 60,
     "task_wait_seconds": 0,
+    "daily_restart": False,
+    "daily_restart_time": "00:00",
 }
 
 
@@ -24,6 +27,9 @@ def normalize_startup_config(raw):
         value = raw.get(key)
         if isinstance(default, bool):
             result[key] = value if isinstance(value, bool) else default
+        elif isinstance(default, str):
+            if isinstance(value, str) and re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
+                result[key] = value
         elif type(value) is int and 0 <= value <= 3600:
             result[key] = value
     return result

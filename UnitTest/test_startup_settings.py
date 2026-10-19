@@ -99,7 +99,7 @@ class StartupSettingsUITests(unittest.TestCase):
 
     def test_startup_labels_and_warning_exclude_update_option(self):
         self.assertEqual(self.panel.navigation.item(1).text(), "시작 설정")
-        self.assertEqual(len(self.panel.startup_checkboxes), 4)
+        self.assertEqual(len(self.panel.startup_checkboxes), 5)
         self.assertIn("일부 프로그램", self.panel.startup_warning.text())
         labels = [label.text() for label in self.panel._sections[1].findChildren(fixtures.QLabel)]
         self.assertFalse(any("업데이트" in label for label in labels))
