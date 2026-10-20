@@ -1,15 +1,20 @@
-# Game resources and personal runtime data are installed separately.
+# 별도 설치하는 리소스와 사용자 데이터
 /assets/
 
-# Virtual environments
+# 로컬 작업 기록과 진단 자료 (HISTORY.md 포함)
+/.cache/
+
+# 가상환경과 로컬 환경 설정
 .venv/
 venv/
-.env/
+.env
+.env.*
+!.env.example
 env/
 .evn/
 evn/
 
-# Generated build files
+# 빌드 결과물 (앱 빌드 설정은 추적)
 *.manifest
 *.spec
 !/packaging/MFWSide.spec
@@ -17,18 +22,17 @@ dist/
 build/
 *.egg-info/
 
-# Python and test caches
+# Python 및 검사 캐시
 __pycache__/
 *$py.class
 *.py[cod]
 *.pyd
-/.cache/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
 
-# Local tools and IDE files
+# 로컬 도구와 개발 환경 파일
 pip-log.txt
 pip-delete-this-directory.txt
 .vscode/
