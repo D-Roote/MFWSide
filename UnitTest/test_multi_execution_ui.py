@@ -187,6 +187,28 @@ class MultiExecutionUITests(unittest.TestCase):
                 path.mkdir(parents=True, exist_ok=True)
                 self.assertTrue(self.panel.grab().save(str(path / f"compact_instances_{theme}.png")))
 
+    def test_adb_action_buttons_share_columns_in_both_themes_and_detail_states(self):
+        sid = self.panel.manager.add(self.adb_connection())
+        card = self.panel.cards[sid]
+        pairs = (
+            (card.start_button, card.adb_details_toggle),
+            (card.stop_button, card.discover_button),
+            (card.delete_button, card.check_button),
+        )
+        for theme in ("light", "dark"):
+            combo = self.window.settings_panel.theme_combo
+            combo.setCurrentIndex(combo.findData(theme))
+            for width in (1000, 1100, 1400):
+                self.window.resize(width, 750)
+                for expanded in (False, True):
+                    with self.subTest(theme=theme, width=width, expanded=expanded):
+                        card.adb_details_toggle.setChecked(expanded)
+                        QTest.qWait(20)
+                        for upper, lower in pairs:
+                            self.assertEqual(upper.geometry().left(), lower.geometry().left())
+                            self.assertEqual(upper.geometry().right(), lower.geometry().right())
+                        self.assertEqual(self.panel.cards_scroll.horizontalScrollBar().maximum(), 0)
+
     def test_long_names_targets_and_failures_never_enlarge_card(self):
         sid = self.add()
         card, session = self.panel.cards[sid], self.panel.manager.sessions[sid]
