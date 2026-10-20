@@ -2,30 +2,34 @@
 
 ## 권장: PyInstaller onedir
 
-첫 배포는 Python과 앱 의존성을 포함한 **폴더형(onedir) EXE**를 권장합니다. 사용자의 Python 설치나 실행 시 pip 설치에 의존하지 않고, DLL 누락·Qt 플러그인·다중 실행을 진단하기 쉽습니다. ZIP 또는 설치 프로그램으로 폴더 전체를 배포합니다. 실제 빌드는 아직 수행하지 않았으며 다음은 검증을 시작하기 위한 빌드안입니다.
+Python과 앱 의존성을 포함한 **폴더형(onedir) EXE**와 ZIP을 생성합니다. 사용자의 Python 설치나 실행 시 pip 설치에 의존하지 않습니다. 게임 리소스·개인 데이터는 번들 밖에 두며, 설치 프로그램이 아니라 쓰기 가능한 폴더에 압축을 푸는 휴대용 배포입니다.
 
 공식 근거: [PyInstaller 사용법](https://pyinstaller.org/en/stable/usage.html), [런타임 경로](https://pyinstaller.org/en/stable/runtime-information.html), [PySide6 배포](https://doc.qt.io/qtforpython-6/deployment/deployment-pyinstaller.html).
 
 ## 준비와 빌드 명령
 
-Windows x64의 별도 빌드 가상환경에서 실행합니다. 개발 환경과 같은 Python 3.10을 시작 기준으로 사용하고 빌드 도구 버전도 릴리즈 시 고정하세요.
+Windows x64 / CPython 3.10.11의 별도 가상환경에서 실행합니다. 앱 의존성과 PyInstaller 6.22.3·hooks 2026.8 및 전이 의존성은 requirements-build.txt에 고정합니다. 기존 가상환경을 복사하지 않습니다.
 
 ```powershell
 py -3.10 -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-.venv\Scripts\python.exe -m pip install pyinstaller
-.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --onedir --windowed --name MFWSide --collect-all maa --add-data "app/pySide6:app/pySide6" --add-data "app/resources:app/resources" main.py
+.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+.venv\Scripts\python.exe -m pip check
+.venv\Scripts\python.exe tools/build_windows.py
 ```
 
-`maa`는 DLL을 동적으로 로드합니다. Python 모듈만 포함하면 부족하므로 `maa/bin`의 MaaFramework/Toolkit/AgentClient/ControlUnit 및 OpenCV/ONNX/DirectML 등 의존 DLL도 함께 수집해야 합니다. `--collect-all maa`는 시작점이며 빌드 결과에서 실제 파일을 확인해야 합니다. QtUiTools/QtSvg, Qt 플랫폼·이미지 플러그인과 Python cv2/NumPy도 함께 확인합니다.
+`packaging/MFWSide.spec`은 maa의 동적 DLL·메타데이터와 앱 UI/QSS/아이콘을 명시적으로 수집합니다. Android 캡처/입력용 MaaAgentBinary는 모든 아키텍처의 파일과 minicap .so까지 데이터로 보존합니다. 이는 리소스의 Python Agent 실행 환경과 다릅니다. QtUiTools/QtSvg와 플랫폼·SVG 플러그인, cv2/NumPy는 실제 번들에서 확인합니다.
 
-첫 디버그 빌드에서는 `--windowed`를 빼서 콘솔을 보이게 하고, 정상 실행을 확인한 뒤 GUI 배포 옵션을 사용하세요. 위 명령은 `assets`, 테스트, 사용자 로그·설정이나 `.venv` 전체를 데이터로 넣지 않습니다.
+스크립트는 격리 회귀 → PyInstaller → 설치 패키지의 라이선스/고지 복사 → 실제 EXE 검증 → ZIP/SHA256 순서로 실행합니다. 회귀를 직전에 따로 통과했다면 --skip-tests, 콘솔 진단 빌드는 --console을 사용할 수 있습니다. 기존 출력에 assets가 있으면 덮어쓰지 않고 중단합니다.
+
+실행 검증은 새 임시 복사본에서 Python/Qt/SDK 경로 환경변수를 제거하고 다른 작업 디렉토리에서 EXE를 시작합니다. 창 제목·최신 설정 저장·정상 창 닫기와 실제 EXE의 frozen multiprocessing 분기를 확인합니다. 별도 프로세스에서 번들의 SDK DLL과 버전을 확인하며 게임/ADB/전원/로그인 등록은 실행하지 않습니다. 성공한 검사 복사본은 제거하고 배포 폴더에 테스트 설정·로그를 남기지 않습니다. 이 검사는 Python을 물리적으로 제거한 별도 PC 검증을 대신하지 않습니다.
 
 ```text
 배포 폴더/
   MFWSide.exe
   _internal/                Python, Qt, maa/bin 및 앱 UI 파일
   licenses/                 배포 의존성의 고지와 라이선스
+  README.md                 리소스 설치와 외부 Agent 안내
+  BUILD-INFO.json           소스 커밋·버전·검증 결과
   assets/                   앱 빌드 외부
     resources/              별도 설치하는 리소스 패키지
     user/                   실행 시 생성, 업데이트에서 보존
@@ -55,6 +59,6 @@ MaaFramework 5.12.3의 [라이선스 원문](https://github.com/MaaXYZ/MaaFramew
 
 ## 대안과 제한
 
-`onefile`은 초기 검증 이후 고려합니다. 실행 때 임시 추출이 필요하고 네이티브 DLL/다중 실행/종료 후 독립 프로세스 처리가 더 복잡합니다. 종료 도우미는 별도 headless 모드와 PyInstaller 독립 실행 환경 처리를 갖추었지만 실제 EXE 빌드를 검증했다는 뜻은 아닙니다. [독립 자식 프로세스 주의사항](https://pyinstaller.org/en/stable/common-issues-and-pitfalls.html#using-sys-executable-to-spawn-subprocesses-that-outlive-the-application-process-implementing-application-restart)을 참고하세요.
+`onefile`은 이번 빌드에 포함하지 않습니다. 실행 때 임시 추출이 필요하고 네이티브 DLL/다중 실행/종료 후 독립 프로세스 처리가 더 복잡합니다. 종료 도우미는 headless 모드와 독립 실행 환경 처리를 갖추었지만 실제 잠금·절전·종료는 수행하지 않습니다. [독립 자식 프로세스 주의사항](https://pyinstaller.org/en/stable/common-issues-and-pitfalls.html#using-sys-executable-to-spawn-subprocesses-that-outlive-the-application-process-implementing-application-restart)을 참고하세요.
 
-Nuitka/pyside6-deploy도 대안이지만 현재 코드는 PyInstaller의 frozen 경로 및 독립 자식 실행 규약을 기준으로 점검했습니다. 다른 빌더는 DLL·데이터 포함과 frozen 진입점 판별을 별도로 검증해야 합니다. 이 단계에서는 빌드 완료나 모든 배포 기능의 실기기 검증을 보장하지 않습니다.
+Nuitka/pyside6-deploy도 대안이지만 이번 결과물은 PyInstaller 기준입니다. 실제 기기/게임·Python Agent 조합·완료 전원 동작·서명·공개 재배포 조건은 배포 전 체크리스트에 따라 별도로 검증합니다. 앱 자체 라이선스는 임의로 부여하지 않으며 설치 패키지의 고지만 복사했다고 모든 재배포 검토가 끝난 것은 아닙니다.

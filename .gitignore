@@ -12,6 +12,7 @@ evn/
 # Generated build files
 *.manifest
 *.spec
+!/packaging/MFWSide.spec
 dist/
 build/
 *.egg-info/
