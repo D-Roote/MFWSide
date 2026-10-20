@@ -38,4 +38,6 @@ MAABA의 분리 기준 `221a572` 다음부터 `3ca9f38`까지 앱 커밋 7개를
 | 19bdb8b | 884277c | 작업 최소화 문구 |
 | 3ca9f38 | f23b9fc | 작업 시작 시 앱 최소화 |
 
-최종 추적 앱/검사 파일 114개 중 MFWSide 전용 `UnitTest/README.md`를 제외한 113개 Git blob이 원본과 일치합니다. 게임 파이프라인 통합 검사 `test_pipeline_defaults.py`는 계속 제외합니다. 외부 `assets/user`는 보존했으며 양쪽 저장소의 기존 이력이나 MAABA의 미커밋 리소스는 변경하지 않았습니다. 새 원본 SHA 대응도 `docs/MAABA_COMMIT_MAP.txt`에 추가했습니다.
+동기화 직후 추적 앱/검사 파일 114개 중 MFWSide 전용 `UnitTest/README.md`를 제외한 113개 Git blob이 원본과 일치합니다. 게임 파이프라인 통합 검사 `test_pipeline_defaults.py`는 계속 제외합니다. 외부 `assets/user`는 보존했으며 양쪽 저장소의 기존 이력이나 MAABA의 미커밋 리소스는 변경하지 않았습니다. 새 원본 SHA 대응도 `docs/MAABA_COMMIT_MAP.txt`에 추가했습니다.
+
+그 뒤 앱 소스는 변경하지 않고 `b8c1591`에 MFWSide 전용 빌드 구성·검증 도구·검사를 추가했습니다. 실제 EXE/ZIP과 검증 결과는 BUILDING.md에 기록하며 생성물은 Git에서 제외합니다.

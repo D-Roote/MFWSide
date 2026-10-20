@@ -17,7 +17,7 @@ py -3.10 -m venv .venv
 .venv\Scripts\python.exe tools/build_windows.py
 ```
 
-`packaging/MFWSide.spec`은 maa의 동적 DLL·메타데이터와 앱 UI/QSS/아이콘을 명시적으로 수집합니다. Android 캡처/입력용 MaaAgentBinary는 모든 아키텍처의 파일과 minicap .so까지 데이터로 보존합니다. 이는 리소스의 Python Agent 실행 환경과 다릅니다. QtUiTools/QtSvg와 플랫폼·SVG 플러그인, cv2/NumPy는 실제 번들에서 확인합니다.
+`packaging/MFWSide.spec`은 maa의 동적 DLL·메타데이터와 앱 UI/QSS/아이콘을 명시적으로 수집합니다. Android 캡처/입력용 MaaAgentBinary는 모든 아키텍처의 파일과 minicap .so까지 데이터로 보존합니다. 이는 리소스의 Python Agent 실행 환경과 다릅니다. QtUiTools/QtSvg와 플랫폼·SVG 플러그인, NumPy도 포함합니다. 현재 앱은 cv2를 직접 import하지 않으므로 Python OpenCV 패키지는 자동 수집되지 않지만 MaaFW가 사용하는 별도 opencv_world4_maa.dll은 포함합니다. BUILD-INFO.json의 packages는 빌드 환경의 설치 버전 목록이며 모든 설치 패키지를 통째로 배포한다는 뜻은 아닙니다.
 
 스크립트는 격리 회귀 → PyInstaller → 설치 패키지의 라이선스/고지 복사 → 실제 EXE 검증 → ZIP/SHA256 순서로 실행합니다. 회귀를 직전에 따로 통과했다면 --skip-tests, 콘솔 진단 빌드는 --console을 사용할 수 있습니다. 기존 출력에 assets가 있으면 덮어쓰지 않고 중단합니다.
 
@@ -62,3 +62,17 @@ MaaFramework 5.12.3의 [라이선스 원문](https://github.com/MaaXYZ/MaaFramew
 `onefile`은 이번 빌드에 포함하지 않습니다. 실행 때 임시 추출이 필요하고 네이티브 DLL/다중 실행/종료 후 독립 프로세스 처리가 더 복잡합니다. 종료 도우미는 headless 모드와 독립 실행 환경 처리를 갖추었지만 실제 잠금·절전·종료는 수행하지 않습니다. [독립 자식 프로세스 주의사항](https://pyinstaller.org/en/stable/common-issues-and-pitfalls.html#using-sys-executable-to-spawn-subprocesses-that-outlive-the-application-process-implementing-application-restart)을 참고하세요.
 
 Nuitka/pyside6-deploy도 대안이지만 이번 결과물은 PyInstaller 기준입니다. 실제 기기/게임·Python Agent 조합·완료 전원 동작·서명·공개 재배포 조건은 배포 전 체크리스트에 따라 별도로 검증합니다. 앱 자체 라이선스는 임의로 부여하지 않으며 설치 패키지의 고지만 복사했다고 모든 재배포 검토가 끝난 것은 아닙니다.
+
+## 2026-10-20 실제 빌드 결과
+
+- 앱 변경: MAABA `3ca9f38` → MFWSide `f23b9fc`. 빌드 소스 커밋은 `b8c1591`이며 이 이후 결과 기록은 문서만 변경한다.
+- 환경: CPython 3.10.11 x64, MaaFw 5.12.3, PySide6 6.11.1, PyInstaller 6.22.3, hooks 2026.8.
+- 실행 파일: `dist/MFWSide/MFWSide.exe`. 폴더 전체 341개 파일, 227,187,328바이트(약 216.7MiB). EXE만 따로 옮기지 않는다.
+- 압축 배포: `dist/MFWSide-windows-x64-20261020.zip`, 88,858,696바이트(약 84.7MiB). 같은 위치의 `.zip.sha256`을 함께 제공한다. Git에는 생성물을 넣지 않는다.
+- ZIP SHA256: `a1730e3f5b8e2decca2d3ecf5df38bd865413794a6f1a9b55243724894b00cc5`.
+- EXE SHA256: `e51956892a824c1b0fc09e85486a08faef0de1a5c871ccacba267c7c039ad552`.
+- 새 가상환경의 최종 전체 격리 회귀 52개 모듈·809개 검사 실패 0건, Windows symlink 권한 제한 skip 1건. 로그는 `.cache/post-build-regression-20261020.log`.
+- 실제 번들 검사: 필수 파일 17개, Android 디바이스 보조 파일/.so, SDK DLL 로딩과 v5.12.3, MFWSide 기본 UI와 최신 설정 저장, 정상 창 닫기, 실제 EXE의 frozen multiprocessing 통신·정상 종료 모두 통과했다. Python이 없는 PATH·다른 작업 디렉토리·개인 설정 없는 임시 복사본에서 검사했다.
+- ZIP 341개 항목의 CRC 정상, 단일 MFWSide 루트, 외부 assets/개인 설정/테스트/.venv/.cache/.git 없음. 배포 폴더에도 테스트로 생성한 assets가 남지 않는다. 설치 패키지의 라이선스·고지와 빌드/검증 JSON은 포함한다.
+- PyInstaller 경고 목록은 운영체제 분기·선택적 모듈·NumPy 확장 심볼 관련 항목을 확인했다. 실제 Windows 앱 import·DLL 로딩·spawn 검증이 통과했다는 범위이며 모든 선택적 패키지를 설치하지는 않는다.
+- 미검증: Python 미설치 별도 PC/VM, 실제 Win32·ADB 자동화, 프로젝트별 Python Agent, 잠금/절전/최대 절전/시스템 종료. EXE는 미서명이며 공개 배포 전 라이선스·고지/소스 제공 검토도 별도로 필요하다.
