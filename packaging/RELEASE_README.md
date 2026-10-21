@@ -2,6 +2,8 @@
 
 MFWSide.exe와 _internal 폴더를 함께 유지하세요. 사용자 Python 설치가 필요 없는 폴더형 앱입니다.
 
+앱은 `주.부.수정` 세 자리 버전을 사용합니다. `BUILD-INFO.json`과 실행 파일 속성에서 버전을 확인할 수 있습니다. 게임별 실행 스크립트(`Start-ANReroll.cmd`)와 MaaReroll 리소스 라이선스는 앱 단독 배포에 포함하지 않습니다.
+
 이 배포물에는 게임 파이프라인·이미지·OCR 모델·개인 설정이 없습니다. 리소스 배포자가 제공한 assets/resources를 MFWSide.exe 옆에 별도로 설치하세요. interface.json이 없으면 기본 MFWSide UI가 열리고 작업 시작은 비활성화됩니다.
 
 Python Agent를 사용하는 리소스는 해당 리소스가 지정한 외부 Python/가상환경 또는 Agent EXE를 별도로 구성해야 합니다. 앱 EXE는 Python Agent 인터프리터가 아닙니다. MaaAgentBinary는 ADB 캡처/입력에 필요한 디바이스 보조 바이너리이며 Python Agent 환경과 다릅니다.

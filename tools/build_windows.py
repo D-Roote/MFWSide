@@ -5,6 +5,7 @@ from importlib.metadata import distribution, version
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import struct
 import subprocess
@@ -16,8 +17,18 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_PACKAGES = (
     'MaaFw', 'MaaAgentBinary', 'PySide6', 'PySide6_Addons', 'PySide6_Essentials',
-    'shiboken6', 'opencv-python', 'numpy', 'StrEnum', 'tomli',
+    'shiboken6', 'numpy', 'StrEnum', 'tomli',
 )
+RESOURCE_ONLY_FILES = frozenset({'start-anreroll.cmd', 'license.mareroll', 'license.maareroll'})
+
+
+def read_version(path=None):
+    value = (ROOT / 'VERSION' if path is None else Path(path)).read_text(encoding='utf-8').strip()
+    if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', value):
+        raise ValueError('VERSION must use the numeric major.minor.patch format')
+    if any(int(part) > 65535 for part in value.split('.')):
+        raise ValueError('VERSION components must fit the Windows version resource (0..65535)')
+    return value
 
 
 def bundle_files(directory):
@@ -27,6 +38,8 @@ def bundle_files(directory):
     for path in files:
         if forbidden.intersection(path.relative_to(directory).parts):
             raise ValueError(f'Non-release data in bundle: {path.relative_to(directory)}')
+        if path.name.casefold() in RESOURCE_ONLY_FILES:
+            raise ValueError(f'Resource-only file in app bundle: {path.relative_to(directory)}')
     return files
 
 
@@ -52,6 +65,8 @@ def copy_notices(destination):
     for name in (*RUNTIME_PACKAGES, 'PyInstaller'):
         package = distribution(name)
         for relative in package.files or ():
+            if relative.name.casefold() in RESOURCE_ONLY_FILES:
+                continue
             if '..' in relative.parts or not relative.name.casefold().startswith(
                     ('license', 'licence', 'copying', 'notice', 'copyright')):
                 continue
@@ -77,6 +92,7 @@ def main(argv=None):
     output = ROOT / 'dist' / 'MFWSide'
     if (output / 'assets').exists():
         raise RuntimeError('Output has external assets/user data; move it to a backup before rebuilding')
+    app_version = read_version()
     if not args.skip_tests:
         subprocess.run([sys.executable, 'UnitTest/run_tests.py', '-q'], cwd=ROOT, check=True, timeout=1800)
     build_env = dict(os.environ)
@@ -99,7 +115,8 @@ def main(argv=None):
     commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     packages = {name: version(name) for name in (*RUNTIME_PACKAGES, 'PyInstaller', 'pyinstaller-hooks-contrib')}
     info = {
-        'name': 'MFWSide', 'format': 'PyInstaller onedir', 'platform': 'windows-x86_64',
+        'name': 'MFWSide', 'version': app_version,
+        'format': 'PyInstaller onedir', 'platform': 'windows-x86_64',
         'python': sys.version.split()[0], 'source_commit': commit,
         'created_utc': datetime.now(timezone.utc).isoformat(), 'console': args.console,
         'packages': packages, 'verification': verification,
@@ -108,12 +125,12 @@ def main(argv=None):
     }
     (output / 'BUILD-INFO.json').write_text(json.dumps(info, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     files = bundle_files(output)
-    archive = ROOT / 'dist' / f'MFWSide-windows-x64-{datetime.now():%Y%m%d}.zip'
+    archive = ROOT / 'dist' / f'MFWSide-{app_version}-windows-x64.zip'
     archive_bundle(output, archive)
     checksum = sha256_file(archive)
     archive.with_suffix('.zip.sha256').write_text(f'{checksum}  {archive.name}\n', encoding='ascii')
     result = {
-        'source_commit': commit, 'folder': str(output.relative_to(ROOT)),
+        'version': app_version, 'source_commit': commit, 'folder': str(output.relative_to(ROOT)),
         'archive': str(archive.relative_to(ROOT)), 'archive_sha256': checksum,
         'bundle_files': len(files), 'bundle_bytes': sum(path.stat().st_size for path in files),
         'archive_bytes': archive.stat().st_size, 'verification': verification,

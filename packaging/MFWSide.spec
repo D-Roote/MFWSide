@@ -2,11 +2,31 @@
 from importlib.metadata import distribution
 import os
 from pathlib import Path
+import runpy
 
 from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.win32.versioninfo import (
+    FixedFileInfo, StringFileInfo, StringStruct, StringTable, VarFileInfo, VarStruct, VSVersionInfo,
+)
 
 
 project = Path(SPECPATH).parent
+app_version = runpy.run_path(str(project / 'tools' / 'build_windows.py'))['read_version']()
+windows_version = tuple(int(part) for part in app_version.split('.')) + (0,)
+version_info = VSVersionInfo(
+    ffi=FixedFileInfo(filevers=windows_version, prodvers=windows_version),
+    kids=[
+        StringFileInfo([StringTable('040904B0', [
+            StringStruct('FileDescription', 'MFWSide'),
+            StringStruct('FileVersion', app_version),
+            StringStruct('InternalName', 'MFWSide'),
+            StringStruct('OriginalFilename', 'MFWSide.exe'),
+            StringStruct('ProductName', 'MFWSide'),
+            StringStruct('ProductVersion', app_version),
+        ])]),
+        VarFileInfo([VarStruct('Translation', [0x0409, 1200])]),
+    ],
+)
 maa_data, maa_binaries, maa_imports = collect_all('maa', include_py_files=False)
 agent_root = Path(distribution('MaaAgentBinary').locate_file('MaaAgentBinary'))
 
@@ -30,7 +50,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['tkinter', 'PyQt5', 'PyQt6', 'PySide2'],
+    excludes=['tkinter', 'PyQt5', 'PyQt6', 'PySide2', 'cv2'],
     noarchive=False,
     optimize=0,
 )
@@ -39,6 +59,7 @@ exe = EXE(
     pyz, a.scripts, [],
     exclude_binaries=True,
     name='MFWSide',
+    version=version_info,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 import zipfile
 
@@ -47,6 +48,43 @@ class WindowsBuildToolingTests(unittest.TestCase):
         empty.touch()
         self.assertEqual(build_windows.sha256_file(empty),
                          'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')
+
+    def test_version_is_numeric_major_minor_patch_and_windows_compatible(self):
+        path = self.root / 'VERSION'
+        for value in ('0.0.0', '1.0.0', '12.34.56', '65535.0.1'):
+            path.write_text(value + '\n', encoding='utf-8')
+            self.assertEqual(build_windows.read_version(path), value)
+        for value in ('1.0', 'v1.0.0', '01.0.0', '1.0.0-rc1', '1.0.0.0',
+                      '../1.0.0', '65536.0.0', '-1.0.0', '1.\u0660.0'):
+            with self.subTest(value=value):
+                path.write_text(value, encoding='utf-8')
+                with self.assertRaises(ValueError):
+                    build_windows.read_version(path)
+
+    def test_resource_launchers_and_licenses_cannot_enter_an_app_archive(self):
+        for name in ('Start-ANReroll.cmd', 'License.Mareroll', 'LICENSE.MAAREROLL'):
+            with self.subTest(name=name):
+                path = self.bundle / name
+                path.touch()
+                archive = self.root / 'blocked.zip'
+                with self.assertRaisesRegex(ValueError, 'Resource-only file'):
+                    build_windows.archive_bundle(self.bundle, archive)
+                self.assertFalse(archive.exists())
+                path.unlink()
+
+    def test_notice_collection_omits_only_resource_specific_licenses(self):
+        for name in ('License.Mareroll', 'License.MaaReroll', 'LICENSE.md'):
+            (self.root / name).write_text(name, encoding='utf-8')
+        package = SimpleNamespace(
+            files=[Path('License.Mareroll'), Path('License.MaaReroll'), Path('LICENSE.md')],
+            locate_file=lambda path: self.root / path,
+        )
+        with patch.object(build_windows, 'distribution', return_value=package):
+            build_windows.copy_notices(self.root / 'notices')
+        names = [path.name for path in (self.root / 'notices').rglob('*') if path.is_file()]
+        self.assertIn('LICENSE.md', names)
+        self.assertIn('Python-LICENSE.txt', names)
+        self.assertFalse(any(name.casefold() in build_windows.RESOURCE_ONLY_FILES for name in names))
 
     def test_archive_refuses_to_package_user_settings(self):
         settings = self.bundle / 'assets/user/config'
@@ -92,6 +130,8 @@ class WindowsBuildToolingTests(unittest.TestCase):
         build_windows.copy_notices(destination)
         self.assertTrue((destination / 'Python-LICENSE.txt').is_file())
         self.assertTrue(list((destination / 'MaaFw').rglob('LICENSE.md')))
-        self.assertTrue(list((destination / 'opencv-python').rglob('LICENSE-3RD-PARTY.txt')))
+        self.assertTrue(list((destination / 'PySide6_Essentials').rglob('LICENSE*')))
+        self.assertNotIn('opencv-python', build_windows.RUNTIME_PACKAGES)
+        self.assertFalse((destination / 'opencv-python').exists())
         self.assertTrue(all(path.resolve().is_relative_to(destination.resolve())
                             for path in destination.rglob('*')))
