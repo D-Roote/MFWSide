@@ -527,10 +527,15 @@ class MonitorCoordinator(QObject):
         if key == self.target_key:
             return
         self.target_key = key
-        if any(t.key == key and t.kind == "Adb" for t in self.targets):
+        self._save_selected_adb_address()
+        self._invalidate()
+
+    def _save_selected_adb_address(self):
+        key = self.target_key
+        if (self.preferences["address"] != key
+                and any(target.key == key and target.kind == "Adb" for target in self.targets)):
             self.preferences["address"] = key
             self.window.settings_panel.save_monitor_preferences(connection=self.preferences)
-        self._invalidate()
 
     def change_preferences(self, preferences):
         preferences = normalize_connection_preferences(preferences)
@@ -631,6 +636,7 @@ class MonitorCoordinator(QObject):
             elif kind == "discover":
                 self.targets = result
                 self.target_key = result[0].key if result else ""
+                self._save_selected_adb_address()
                 if result:
                     self.status = f"대상 {len(result)}개 발견. 연결 확인을 눌러주세요."
                 elif self.service.preset(self.preset_name)["type"] == "Adb":
