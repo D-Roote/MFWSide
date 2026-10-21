@@ -1,8 +1,8 @@
 """Explicit storage inspection/cleanup; workers never access GUI objects."""
-from PySide6.QtCore import QEvent, QThread, Qt, Signal, Slot
+from PySide6.QtCore import QEvent, QSize, QThread, Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QAbstractItemView, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton,
-    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QStyle, QStyleOptionViewItem, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from app.storageManagement import cleanup_storage, format_size, scan_storage, storage_groups
@@ -10,19 +10,61 @@ from app.dialogs import confirm_deletion
 
 
 class StorageUsageTree(QTreeWidget):
-    """Keep the vertical scrollbar below the fixed column headers."""
+    """Fit whole rows up to the former height limit; keep the header fixed."""
+
+    HEIGHT_LIMIT = 300
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._height_timer = QTimer(self)
+        self._height_timer.setSingleShot(True)
+        self._height_timer.timeout.connect(self._fit_height)
+        for signal in (self.model().rowsInserted, self.model().rowsRemoved,
+                       self.model().modelReset, self.model().dataChanged):
+            signal.connect(self._queue_height)
         self.header_scroll_corner = QFrame()
         self.header_scroll_corner.setObjectName("storageHeaderScrollCorner")
         self.addScrollBarWidget(self.header_scroll_corner, Qt.AlignmentFlag.AlignTop)
         self.header_scroll_corner.setFixedHeight(self.header().height())
         self.header().installEventFilter(self)
+        self._queue_height()
+
+    def _queue_height(self, *_args):
+        self._height_timer.start(0)
+
+    def _fit_height(self):
+        self.ensurePolished()
+        self.doItemsLayout()
+        rows = self.topLevelItemCount()
+        if rows:
+            row_height = self.sizeHintForRow(0)
+        else:
+            # Measure a blank checkbox row with the active QSS/font instead of
+            # inserting a fake selectable item or hard-coding its pixel size.
+            option = QStyleOptionViewItem()
+            self.initViewItemOption(option)
+            option.features |= (QStyleOptionViewItem.ViewItemFeature.HasDisplay
+                                | QStyleOptionViewItem.ViewItemFeature.HasCheckIndicator)
+            option.text = " "
+            row_height = self.style().sizeFromContents(
+                QStyle.ContentsType.CT_ItemViewItem, option,
+                QSize(0, self.fontMetrics().height()), self).height()
+        height = min(self.HEIGHT_LIMIT, self.header().height() + 2 * self.frameWidth()
+                     + max(1, rows) * max(1, row_height))
+        if self.minimumHeight() != height or self.maximumHeight() != height:
+            self.setFixedHeight(height)
+
+    def event(self, event):
+        handled = super().event(event)
+        if (event.type() in (QEvent.Type.Show, QEvent.Type.FontChange, QEvent.Type.StyleChange)
+                and hasattr(self, "_height_timer")):
+            self._queue_height()
+        return handled
 
     def eventFilter(self, watched, event):
         if watched is self.header() and event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
             self.header_scroll_corner.setFixedHeight(self.header().height())
+            self._queue_height()
         return super().eventFilter(watched, event)
 
 
@@ -83,12 +125,8 @@ class ManagementPanel(QWidget):
         self.usages = []
         self.paths = None
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 8, 0, 0)
-        layout.setSpacing(10)
-        notice = QLabel("로그·오류 이미지와 Python 캐시를 폴더별로 조회합니다. 설정·리소스·OCR 모델은 삭제하지 않습니다.")
-        notice.setObjectName("settingsRowDescription")
-        notice.setWordWrap(True)
-        layout.addWidget(notice)
+        layout.setContentsMargins(0, 12, 0, 12)
+        layout.setSpacing(12)
         self.tree = StorageUsageTree()
         self.tree.setObjectName("storageUsageTree")
         self.tree.setAccessibleName("폴더별 로그 용량 및 삭제 대상")
@@ -102,8 +140,6 @@ class ManagementPanel(QWidget):
         self.tree.header().setHighlightSections(False)
         self.tree.header().setSortIndicatorShown(False)
         self.tree.header().setStretchLastSection(False)
-        self.tree.setMinimumHeight(210)
-        self.tree.setMaximumHeight(300)
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         for column in (1, 2, 3):
             self.tree.header().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
@@ -117,12 +153,13 @@ class ManagementPanel(QWidget):
             buttons.addWidget(button)
         buttons.addStretch(1)
         layout.addLayout(buttons)
-        self.status = QLabel("용량 조회를 누르면 정리 가능한 폴더를 표시합니다. 사용 중인 파일과 실행 중인 세션은 보호됩니다.")
+        self.status = QLabel()
         self.status.setObjectName("settingsRowDescription")
         self.status.setWordWrap(True)
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setAccessibleName("관리 결과")
         layout.addWidget(self.status)
+        self.status.hide()
         self.reset_row = QFrame()
         self.reset_row.setObjectName("settingsRow")
         reset_layout = QGridLayout(self.reset_row)
@@ -163,6 +200,10 @@ class ManagementPanel(QWidget):
         self.allowed = bool(allowed)
         self._refresh_buttons()
 
+    def set_status(self, message):
+        self.status.setText(message)
+        self.status.setVisible(bool(message))
+
     def _selected(self):
         return [self.tree.topLevelItem(row).usage for row in range(self.tree.topLevelItemCount())
                 if self.tree.topLevelItem(row).checkState(0) == Qt.CheckState.Checked]
@@ -197,7 +238,7 @@ class ManagementPanel(QWidget):
 
     def delete_selected(self):
         if self.busy or self.closing or not self.allowed or not self.guard():
-            self.status.setText("작업·화면 모니터링·실행 테스트가 끝난 뒤 삭제하세요.")
+            self.set_status("작업·화면 모니터링·실행 테스트가 끝난 뒤 삭제하세요.")
             return
         selected = self._selected()
         if not selected:
@@ -209,7 +250,7 @@ class ManagementPanel(QWidget):
                             "휴지통으로 이동하지 않으며 복구할 수 없습니다.\n\n계속하시겠습니까?") != QMessageBox.StandardButton.Yes:
             return
         if not self.guard() or self.closing:
-            self.status.setText("상태가 변경되어 삭제를 취소했습니다.")
+            self.set_status("상태가 변경되어 삭제를 취소했습니다.")
             return
         self._start(StorageWorker(self.paths[0], [], selected, self))
 
@@ -217,14 +258,14 @@ class ManagementPanel(QWidget):
         self.worker = worker
         worker.finished.connect(self._finished)
         self._refresh_buttons()
-        self.status.setText("로그를 정리하고 있습니다…" if worker.usages is not None else "폴더 용량을 조회하고 있습니다…")
+        self.set_status("로그를 정리하고 있습니다…" if worker.usages is not None else "폴더 용량을 조회하고 있습니다…")
         self.busy_changed.emit(True)
         try:
             worker.start()
         except RuntimeError as error:
             self.worker = None
             worker.deleteLater()
-            self.status.setText(f"관리 작업을 시작하지 못했습니다: {error}")
+            self.set_status(f"관리 작업을 시작하지 못했습니다: {error}")
             self.busy_changed.emit(False)
             self._refresh_buttons()
 
@@ -235,7 +276,7 @@ class ManagementPanel(QWidget):
             return
         worker.deleteLater()
         if worker.error:
-            self.status.setText("관리 작업 실패: " + worker.error)
+            self.set_status("관리 작업 실패: " + worker.error)
         elif worker.usages is None and worker.result is not None:
             # Zero-byte/protected-only folders are not cleanup candidates. Keep
             # the complete scan for totals and access-error reporting below.
@@ -254,12 +295,12 @@ class ManagementPanel(QWidget):
             total = format_size(sum(usage.bytes for usage in worker.result))
             removable = format_size(sum(usage.removable_bytes for usage in worker.result))
             errors = sum(bool(usage.errors) for usage in worker.result)
-            self.status.setText(("정리 가능한 폴더가 없습니다. " if not self.usages else "")
+            self.set_status(("정리 가능한 폴더가 없습니다. " if not self.usages else "")
                                 + f"사용 용량 {total}, 정리 가능 {removable}. 사용 중인 파일·설정·리소스는 제외합니다."
                                 + (f" {errors}개 폴더는 접근 제한이 있어 일부 조회되지 않았습니다." if errors else ""))
         elif worker.result is not None:
             result = worker.result
-            self.status.setText(f"{result.files}개 파일, {format_size(result.bytes)} 삭제 완료. 보호·갱신 파일 {result.skipped}개 제외."
+            self.set_status(f"{result.files}개 파일, {format_size(result.bytes)} 삭제 완료. 보호·갱신 파일 {result.skipped}개 제외."
                                 + ("\n삭제하지 못한 항목: " + "\n".join(result.errors) if result.errors else ""))
             self.usages = []
             self.tree.clear()

@@ -6,7 +6,7 @@ import unittest
 import test_runtime_lifecycle as fixtures
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QAbstractItemView, QMessageBox
-from app.storageManagement import StorageGroup, StorageUsage
+from app.storageManagement import CleanupResult, StorageGroup, StorageUsage
 
 
 class ManagementUITests(unittest.TestCase):
@@ -55,6 +55,49 @@ class ManagementUITests(unittest.TestCase):
         self.assertGreater(self.panel.tree.topLevelItemCount(), 0)
         self.assertIn("사용 용량", self.panel.status.text())
         self.assertTrue(self.window.ui.workStartBtn.isEnabled())
+
+    def test_inventory_omits_static_descriptions_and_keeps_standard_spacing(self):
+        self.show_management()
+        settings = self.window.settings_panel
+        layout = self.panel.layout()
+        self.assertIs(layout.itemAt(0).widget(), self.panel.tree)
+        self.assertTrue(self.panel.status.isHidden())
+        self.assertEqual(self.panel.status.text(), "")
+        labels = [label.text() for label in self.panel.findChildren(fixtures.QLabel)]
+        self.assertFalse(any("폴더별로 조회합니다" in text or "용량 조회를 누르면" in text for text in labels))
+        for theme in ("light", "dark"):
+            with self.subTest(theme=theme):
+                settings.theme_combo.setCurrentIndex(settings.theme_combo.findData(theme))
+                fixtures.QTest.qWait(20)
+                margins = layout.contentsMargins()
+                self.assertEqual((margins.top(), margins.bottom(), layout.spacing()), (12, 12, 12))
+                tree_bottom = self.panel.tree.mapTo(self.panel, QPoint(0, self.panel.tree.height())).y()
+                buttons_top = self.panel.select_all_button.mapTo(self.panel, QPoint()).y()
+                self.assertEqual(buttons_top - tree_bottom, 12)
+                button_bottom = self.panel.select_all_button.mapTo(
+                    self.panel, QPoint(0, self.panel.select_all_button.height())).y()
+                self.assertEqual(self.panel.height() - button_bottom, 12)
+                self.assertEqual(settings.detail_scroll.horizontalScrollBar().maximum(), 0)
+
+    def test_status_is_only_visible_for_results_and_errors(self):
+        self.show_management()
+        self.assertTrue(self.panel.status.isHidden())
+        self.publish_inventory([self.usage("logs", "Logs", 100, 100)])
+        self.assertTrue(self.panel.status.isVisible())
+        self.assertIn("사용 용량", self.panel.status.text())
+        self.panel.set_status("")
+        self.assertTrue(self.panel.status.isHidden())
+        self.panel.set_status("조회 실패")
+        self.assertTrue(self.panel.status.isVisible())
+        self.assertEqual(self.panel.status.text(), "조회 실패")
+
+    def test_reset_guard_can_show_an_error_without_an_initial_notice(self):
+        self.show_management()
+        self.assertTrue(self.panel.status.isHidden())
+        with patch.object(self.window, "_can_manage_data", return_value=False):
+            self.window._reset_all_settings()
+        self.assertTrue(self.panel.status.isVisible())
+        self.assertIn("초기화하세요", self.panel.status.text())
 
     def test_auto_cleanup_defaults_on_and_persists_above_reset(self):
         from app.settingsUI import SettingsStore
@@ -151,6 +194,47 @@ class ManagementUITests(unittest.TestCase):
         self.assertFalse(self.panel.select_all_button.isEnabled())
         self.assertFalse(self.panel.delete_button.isEnabled())
         self.assertIn("정리 가능한 폴더가 없습니다.", self.panel.status.text())
+
+    def test_inventory_height_grows_by_rows_then_scrolls_at_the_original_limit(self):
+        self.show_management()
+        settings = self.window.settings_panel
+        tree = self.panel.tree
+        for theme in ("light", "dark"):
+            settings.theme_combo.setCurrentIndex(settings.theme_combo.findData(theme))
+            heights = {}
+            for count in (0, 1, 2, 3, 30, 0):
+                with self.subTest(theme=theme, count=count):
+                    self.publish_inventory([self.usage(str(i), f"Log {i}", 100, 100)
+                                            for i in range(count)])
+                    fixtures.QTest.qWait(20)
+                    heights[count] = tree.height()
+                    if 0 < count <= 3:
+                        row_height = tree.sizeHintForRow(0)
+                        self.assertEqual(tree.viewport().height(), count * row_height)
+                    if count <= 3:
+                        self.assertEqual(tree.verticalScrollBar().maximum(), 0)
+                    else:
+                        self.assertEqual(tree.height(), tree.HEIGHT_LIMIT)
+                        self.assertGreater(tree.verticalScrollBar().maximum(), 0)
+                    self.assertEqual(tree.horizontalScrollBar().maximum(), 0)
+            self.assertEqual(heights[0], heights[1])
+            self.assertEqual(heights[2] - heights[1], heights[3] - heights[2])
+            self.assertLess(heights[0], 210)
+
+    def test_inventory_shrinks_after_cleanup_and_remeasures_header_height(self):
+        self.publish_inventory([self.usage(str(i), f"Log {i}", 100, 100) for i in range(30)])
+        self.show_management()
+        tree = self.panel.tree
+        self.assertEqual(tree.height(), tree.HEIGHT_LIMIT)
+        self.panel.worker = MagicMock(error="", usages=[], result=CleanupResult(files=30))
+        self.panel._finished()
+        fixtures.QTest.qWait(20)
+        small_height = tree.height()
+        self.assertEqual(tree.topLevelItemCount(), 0)
+        self.assertLess(small_height, tree.HEIGHT_LIMIT)
+        tree.header().setFixedHeight(tree.header().height() + 10)
+        fixtures.QTest.qWait(20)
+        self.assertEqual(tree.height(), small_height + 10)
 
     def test_default_descending_size_and_clickable_numeric_column_sorting(self):
         usages = [self.usage("a", "Alpha", 2048, 2048, 2),

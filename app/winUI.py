@@ -2007,7 +2007,7 @@ class MainWindow(QMainWindow):
 
     def _reset_all_settings(self):
         if not self._can_manage_data():
-            self.settings_panel.management.status.setText("작업·모니터링·관리 작업이 끝난 뒤 초기화하세요.")
+            self.settings_panel.management.set_status("작업·모니터링·관리 작업이 끝난 뒤 초기화하세요.")
             return
         if QMessageBox.question(self, "모든 설정 초기화",
                                 "작업 목록·세부 옵션·프리셋·연결·경로·테마·창 배치·다중 실행 목록·완료 후 동작을 모두 초기화합니다.\n"
@@ -2032,7 +2032,7 @@ class MainWindow(QMainWindow):
                     registration.set_enabled(True)
                 except (OSError, ValueError) as restore_error:
                     error = OSError(f"{error}; 시스템 시작 등록 복구 실패: {restore_error}")
-            self.settings_panel.management.status.setText(f"설정 초기화 실패: {error}")
+            self.settings_panel.management.set_status(f"설정 초기화 실패: {error}")
             return
         self._reset_settings_pending = True
         self._ui_save_timer.stop()
