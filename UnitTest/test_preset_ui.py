@@ -126,11 +126,13 @@ class PresetUITests(unittest.TestCase):
         identifier = self.save_preset()
         old = deepcopy(self.window.task_presets)
         self.task_widget().checkbox.setChecked(False)
-        with patch("app.winUI.QMessageBox.question", return_value=QMessageBox.StandardButton.No):
+        with patch("app.winUI.QMessageBox.question", return_value=QMessageBox.StandardButton.No), \
+                patch("app.winUI.confirm_deletion", return_value=QMessageBox.StandardButton.No):
             self.assertFalse(self.window._replace_task_preset(identifier, "Changed"))
             self.assertFalse(self.window._delete_task_preset(identifier))
         self.assertEqual(self.window.task_presets, old)
-        with patch("app.winUI.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes):
+        with patch("app.winUI.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes), \
+                patch("app.winUI.confirm_deletion", return_value=QMessageBox.StandardButton.Yes):
             self.assertTrue(self.window._replace_task_preset(identifier, "Changed"))
             self.assertEqual(self.window.task_presets[0]["id"], identifier)
             self.assertEqual(self.window.task_presets[0]["name"], "Changed")
@@ -145,7 +147,8 @@ class PresetUITests(unittest.TestCase):
         identifier = self.save_preset()
         before = deepcopy(self.window.task_presets)
         with patch.object(self.window, "save_user_config", return_value=False), patch(
-                "app.winUI.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes):
+                "app.winUI.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes), patch(
+                "app.winUI.confirm_deletion", return_value=QMessageBox.StandardButton.Yes):
             self.assertFalse(self.window._save_task_preset("New"))
             self.assertEqual(self.window.task_presets, before)
             self.assertFalse(self.window._replace_task_preset(identifier, "Renamed"))

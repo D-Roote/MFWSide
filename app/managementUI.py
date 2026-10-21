@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.storageManagement import cleanup_storage, format_size, scan_storage, storage_groups
+from app.dialogs import confirm_deletion
 
 
 class StorageUsageTree(QTreeWidget):
@@ -203,9 +204,9 @@ class ManagementPanel(QWidget):
             return
         folders = "\n".join(f"{usage.group.label}\n{usage.group.root}" for usage in selected)
         size = format_size(sum(usage.removable_bytes for usage in selected))
-        if QMessageBox.question(self, "로그 영구 삭제", f"다음 폴더의 로그·오류 이미지·캐시를 영구 삭제합니다.\n정리 가능 용량: {size}\n\n{folders}\n\n휴지통으로 이동하지 않으며 복구할 수 없습니다. 계속할까요?",
-                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+        if confirm_deletion(self, "로그 영구 삭제",
+                            f"다음 폴더의 로그·오류 이미지·캐시를 영구 삭제합니다.\n정리 가능 용량: {size}\n\n{folders}\n\n"
+                            "휴지통으로 이동하지 않으며 복구할 수 없습니다.\n\n계속하시겠습니까?") != QMessageBox.StandardButton.Yes:
             return
         if not self.guard() or self.closing:
             self.status.setText("상태가 변경되어 삭제를 취소했습니다.")

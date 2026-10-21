@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QAbstractItemView,
 from app.runtime import AppRuntime, PROGRAM_LAUNCH_ENTRY
 from app.paths import PATHS
 from app.controls import PopupOnlyWheelComboBox
+from app.dialogs import confirm_deletion
 from app.settingsUI import AssociatedControlLabel, SettingsPanel
 from app.monitorUI import MonitorCoordinator
 from app.extraFeaturesUI import ExtraFeaturesPanel
@@ -3487,9 +3488,8 @@ class MainWindow(QMainWindow):
         preset = next((preset for preset in self.task_presets if preset["id"] == preset_id), None)
         if preset is None:
             return False
-        if QMessageBox.question(self, "프리셋 삭제", f"'{preset['name']}' 프리셋을 삭제할까요? 현재 작업 목록은 바뀌지 않습니다.",
-                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+        if confirm_deletion(self, "프리셋 삭제",
+                            f"'{preset['name']}' 프리셋을 삭제할까요? 현재 작업 목록은 바뀌지 않습니다.") != QMessageBox.StandardButton.Yes:
             return False
         if not self._preset_edit_allowed():
             return False

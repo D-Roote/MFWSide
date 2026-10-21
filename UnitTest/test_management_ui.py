@@ -107,10 +107,11 @@ class ManagementUITests(unittest.TestCase):
                 item.setCheckState(0, Qt.CheckState.Checked)
         self.panel.tree.sortItems(1, Qt.SortOrder.DescendingOrder)
         self.assertEqual([usage.group.key for usage in self.panel._selected()], ["debug"])
-        with patch("app.managementUI.QMessageBox.question", return_value=QMessageBox.StandardButton.No):
+        with patch("app.managementUI.confirm_deletion", return_value=QMessageBox.StandardButton.No) as question:
             self.panel.delete_selected()
+        self.assertTrue(question.call_args.args[2].endswith("\n\n계속하시겠습니까?"))
         self.assertTrue(log.exists())
-        with patch("app.managementUI.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes):
+        with patch("app.managementUI.confirm_deletion", return_value=QMessageBox.StandardButton.Yes):
             self.panel.delete_selected()
         self.wait_worker()
         self.assertFalse(log.exists())
