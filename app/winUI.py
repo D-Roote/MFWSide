@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QAbstractItemView,
 from app.runtime import AppRuntime, PROGRAM_LAUNCH_ENTRY
 from app.paths import PATHS
 from app.controls import PopupOnlyWheelComboBox
+from app.controlStyle import install_control_style
 from app.dialogs import confirm_deletion, show_notice
 from app.logPresentation import format_log_message
 from app.settingsUI import AssociatedControlLabel, SettingsPanel
@@ -1556,6 +1557,7 @@ class MonitorSectionsWidget(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        install_control_style()
         self.diagnostic_logs_enabled = False
         self._ui_state_ready = False
         self._first_ui_show = True

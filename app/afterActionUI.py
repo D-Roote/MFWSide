@@ -3,7 +3,7 @@ from PySide6.QtCore import QPointF, Qt, QThread, Signal
 from PySide6.QtGui import QFontMetricsF, QPainter, QPalette
 from PySide6.QtWidgets import (
     QCheckBox, QFrame, QLabel, QPushButton, QStyle, QStyleOptionButton,
-    QStyleOptionFocusRect, QVBoxLayout, QWidget, QSizePolicy,
+    QVBoxLayout, QWidget, QSizePolicy,
 )
 
 from app.afterActions import SYSTEM_ACTIONS
@@ -30,11 +30,6 @@ class OpticalCheckBox(QCheckBox):
         group = QPalette.ColorGroup.Active if self.isEnabled() else QPalette.ColorGroup.Disabled
         painter.setPen(option.palette.color(group, QPalette.ColorRole.WindowText))
         painter.drawText(QPointF(text_rect.x(), baseline), self.text())
-        if self.hasFocus():
-            focus = QStyleOptionFocusRect()
-            focus.initFrom(self)
-            focus.rect = text_rect
-            style.drawPrimitive(QStyle.PrimitiveElement.PE_FrameFocusRect, focus, painter, self)
         painter.end()
 
 
