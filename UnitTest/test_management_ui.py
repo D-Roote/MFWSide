@@ -56,6 +56,39 @@ class ManagementUITests(unittest.TestCase):
         self.assertIn("사용 용량", self.panel.status.text())
         self.assertTrue(self.window.ui.workStartBtn.isEnabled())
 
+    def test_auto_cleanup_defaults_on_and_persists_above_reset(self):
+        from app.settingsUI import SettingsStore
+        settings = self.window.settings_panel
+        self.assertTrue(settings.auto_cleanup_on_exit_enabled())
+        row = settings.auto_cleanup_row
+        self.assertEqual(row.title_label.text(), "자동 로그 정리")
+        self.assertEqual(row.description_label.text(), "앱이 종료될 때 모든 로그와 캐시를 같이 정리합니다.")
+        section_layout = settings._section_widgets["management"].layout()
+        self.assertIs(row.parentWidget(), settings._section_widgets["management"])
+        self.assertEqual(section_layout.indexOf(row) + 1,
+                         section_layout.indexOf(self.panel.reset_row))
+        settings.auto_cleanup_checkbox.setChecked(False)
+        saved = SettingsStore(settings.store.config_path).load()
+        self.assertIs(saved["general"]["auto_cleanup_on_exit"], False)
+        settings.auto_cleanup_checkbox.setChecked(True)
+        saved = SettingsStore(settings.store.config_path).load()
+        self.assertIs(saved["general"]["auto_cleanup_on_exit"], True)
+
+    def test_auto_cleanup_description_uses_the_same_bottom_padding_as_other_settings(self):
+        self.show_management()
+        settings = self.window.settings_panel
+        reference = settings.minimize_checkbox.parentWidget()
+        row = settings.auto_cleanup_row
+        for theme in ("light", "dark"):
+            with self.subTest(theme=theme):
+                settings.theme_combo.setCurrentIndex(settings.theme_combo.findData(theme))
+                fixtures.QTest.qWait(20)
+                padding = lambda widget: widget.height() - widget.description_label.mapTo(
+                    widget, QPoint(0, widget.description_label.height())).y()
+                self.assertEqual(padding(row), padding(reference))
+                self.assertGreaterEqual(padding(row), 12)
+                self.assertEqual(row.parentWidget().layout().spacing(), 0)
+
     def test_delete_requires_confirmation_and_does_not_reset_settings(self):
         directory = self.user / "debug"
         directory.mkdir()

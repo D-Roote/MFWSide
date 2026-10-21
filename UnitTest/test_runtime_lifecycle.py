@@ -2884,7 +2884,9 @@ class UILifecycleTests(unittest.TestCase):
 
     def test_settings_explicit_selection_survives_clamped_scroll(self):
         panel = self.window.settings_panel
-        self.window.resize(1000, 600)
+        # Keep the enlarged management card shorter than the viewport so this
+        # test still exercises a selection whose scroll target is clamped.
+        self.window.resize(1000, 800)
         self.window.show()
         self.window.ui.mainPages.setCurrentWidget(self.window.ui.settingTab)
         self.app.processEvents()

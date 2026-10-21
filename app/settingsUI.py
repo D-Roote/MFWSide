@@ -54,6 +54,7 @@ DEFAULT_MAA_CONFIG = {
         "program_launch_task_enabled": True,
         "allow_option_edits_while_running": False,
         "clear_log_on_start": True,
+        "auto_cleanup_on_exit": True,
     },
     "controller": {},
     "connection": {"adb_path": "", "address": ""},
@@ -108,6 +109,7 @@ class SettingsStore:
                     "program_launch_task_enabled",
                     "allow_option_edits_while_running",
                     "clear_log_on_start",
+                    "auto_cleanup_on_exit",
                 ):
                     if isinstance(raw_general.get(key), bool):
                         config["general"][key] = raw_general[key]
@@ -533,6 +535,19 @@ class SettingsPanel(QWidget):
         _management, management_layout = self._create_section("관리", "사용자 설정을 초기화하고 누적된 로그와 캐시를 정리합니다.")
         self.management = ManagementPanel(self)
         management_layout.addWidget(self.management)
+        cleanup_layout = self.management.layout()
+        cleanup_layout.removeWidget(self.management.reset_row)
+        self.auto_cleanup_checkbox = QCheckBox()
+        self.auto_cleanup_checkbox.setObjectName("settingsCheckbox")
+        self.auto_cleanup_checkbox.setAccessibleName("자동 로그 정리")
+        self.auto_cleanup_row = self._add_setting_row(
+            management_layout,
+            "자동 로그 정리",
+            "앱이 종료될 때 모든 로그와 캐시를 같이 정리합니다.",
+            self.auto_cleanup_checkbox,
+            control_right_margin=12,
+        )
+        management_layout.addWidget(self.management.reset_row)
 
         # The card owns its bottom inset; avoid doubling it on a final row.
         for section in self._sections:
@@ -680,6 +695,7 @@ class SettingsPanel(QWidget):
             general["allow_option_edits_while_running"]
         )
         self.clear_log_checkbox.setChecked(general["clear_log_on_start"])
+        self.auto_cleanup_checkbox.setChecked(general["auto_cleanup_on_exit"])
 
         controller_index = self._find_controller_index(self.config["controller"])
         if controller_index >= 0:
@@ -752,6 +768,7 @@ class SettingsPanel(QWidget):
         )
         self.runtime_edit_checkbox.toggled.connect(self._on_runtime_edit_changed)
         self.clear_log_checkbox.toggled.connect(self._on_clear_log_changed)
+        self.auto_cleanup_checkbox.toggled.connect(self._save)
         self.program_browse_button.clicked.connect(self._browse_program_path)
         self.program_apply_button.clicked.connect(self._apply_program_path)
         self.program_test_button.clicked.connect(self._test_program_path)
@@ -887,6 +904,7 @@ class SettingsPanel(QWidget):
                     self.runtime_edit_checkbox.isChecked()
                 ),
                 "clear_log_on_start": self.clear_log_checkbox.isChecked(),
+                "auto_cleanup_on_exit": self.auto_cleanup_checkbox.isChecked(),
             },
             "controller": SettingsStore.serialize_controller(
                 self.controller_combo.currentData()
@@ -1282,6 +1300,9 @@ class SettingsPanel(QWidget):
 
     def clear_log_on_start_enabled(self):
         return self.clear_log_checkbox.isChecked()
+
+    def auto_cleanup_on_exit_enabled(self):
+        return self.auto_cleanup_checkbox.isChecked()
 
     def theme(self):
         return self.theme_combo.currentData() or "light"

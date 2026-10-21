@@ -60,7 +60,9 @@ def storage_groups(user_dir, root_dir, app_dir, resource_dir):
                StorageGroup("legacy_debug", "진단 로그 및 오류 화면", root, root / "debug"),
                StorageGroup("legacy_logs", "실행 로그", root, root / "logs", "logs"),
                StorageGroup("app_cache", "Python 캐시", app, app, "cache"),
-               StorageGroup("agent_cache", "에이전트 캐시", root, root / "assets" / "agent", "cache")]
+               StorageGroup("root_cache", "시작 프로그램 캐시", root, root / "__pycache__", "bytecode"),
+               StorageGroup("agent_cache", "에이전트 캐시", root, root / "assets" / "agent", "cache"),
+               StorageGroup("resource_agent_cache", "리소스 에이전트 캐시", resources, resources / "agent", "cache")]
     return groups
 
 
@@ -107,10 +109,10 @@ def process_active(pid):
         kernel.CloseHandle(process)
 
 
-def _active_runs(group):
+def _active_runs(group, protect_discovery=True):
     if group.kind != "sessions" or not group.root.is_dir():
         return []
-    result, active = [group.root / "discovery"], {}
+    result, active = ([group.root / "discovery"] if protect_discovery else []), {}
     for instance in group.root.iterdir():
         if not _safe_path(group, instance) or not instance.is_dir():
             continue
@@ -132,6 +134,8 @@ def _active_runs(group):
 def _eligible(group, path):
     relative = path.relative_to(group.root)
     suffix = path.suffix.casefold()
+    if group.kind == "bytecode":
+        return suffix in {".pyc", ".pyo"}
     if group.kind == "cache":
         return "__pycache__" in relative.parts and suffix in {".pyc", ".pyo"}
     if group.kind in {"logs", "shallow"}:
@@ -170,17 +174,17 @@ def _protected(path, protected):
     return any(path == item or path.is_relative_to(item) for item in protected)
 
 
-def scan_storage(groups, user_dir, cancelled=lambda: False):
+def scan_storage(groups, user_dir, cancelled=lambda: False, *, after_exit=False):
     user = Path(user_dir).absolute()
     # The app's logger/fault descriptor remains open even while no task runs.
-    protected = [user / "debug" / "maafw.log", user / "debug" / f"python_fault_{os.getpid()}.log"]
+    protected = [] if after_exit else [user / "debug" / "maafw.log", user / "debug" / f"python_fault_{os.getpid()}.log"]
     result = []
     for group in groups:
         if cancelled():
             break
         usage = StorageUsage(group)
         try:
-            live = [*protected, *_active_runs(group)]
+            live = [*protected, *_active_runs(group, protect_discovery=not after_exit)]
             for path, info in _files(group, usage.errors, cancelled):
                 usage.bytes += info.st_size
                 usage.files += 1
@@ -193,17 +197,17 @@ def scan_storage(groups, user_dir, cancelled=lambda: False):
     return result
 
 
-def cleanup_storage(usages, user_dir, cancelled=lambda: False):
+def cleanup_storage(usages, user_dir, cancelled=lambda: False, *, after_exit=False):
     """Unlink only approved generated files, never recursively delete a directory."""
     result = CleanupResult()
     user = Path(user_dir).absolute()
-    protected = [user / "debug" / "maafw.log", user / "debug" / f"python_fault_{os.getpid()}.log"]
+    protected = [] if after_exit else [user / "debug" / "maafw.log", user / "debug" / f"python_fault_{os.getpid()}.log"]
     for usage in usages:
         if cancelled():
             break
         group = usage.group
         try:
-            live = [*protected, *_active_runs(group)]
+            live = [*protected, *_active_runs(group, protect_discovery=not after_exit)]
             for path, info in _files(group, result.errors, cancelled):
                 if cancelled():
                     break

@@ -10,6 +10,19 @@ from app.afterActions import run_after_exit_cli
 
 
 class FrozenHelperTests(unittest.TestCase):
+    def test_cleanup_routes_before_gui_sdk_and_fault_logging(self):
+        loaded = set(sys.modules)
+        with patch.object(sys, "argv", ["MFWSide.exe", "--cleanup-after-exit", "999"]), \
+                patch.object(sys, "dont_write_bytecode", False), \
+                patch("app.exitCleanup.run_cleanup_after_exit_cli", return_value=0) as cleanup:
+            self.assertEqual(main.main(), 0)
+            self.assertTrue(sys.dont_write_bytecode)
+        cleanup.assert_called_once_with(["--cleanup-after-exit", "999"])
+        imported = set(sys.modules) - loaded
+        self.assertNotIn("PySide6.QtWidgets", imported)
+        self.assertNotIn("maa.library", imported)
+        self.assertNotIn("app.crashDiagnostics", imported)
+
     def test_main_routes_helper_before_gui_sdk_paths_and_fault_diagnostics(self):
         loaded = set(sys.modules)
         with patch.object(sys, "argv", ["MFWSide.exe", "--after-exit", "999", "lock", "safe.log"]), \

@@ -109,11 +109,13 @@ class ApplicationPathTests(unittest.TestCase):
                 os.chdir(directory)
                 with patch("PySide6.QtWidgets.QApplication") as application, \
                         patch("app.winUI.MainWindow") as window, \
-                        patch("app.crashDiagnostics.enable_fault_log") as fault_log:
+                        patch("app.crashDiagnostics.enable_fault_log") as fault_log, \
+                        patch("app.exitCleanup.schedule_exit_cleanup") as schedule_cleanup:
                     application.return_value.exec.return_value = 7
                     self.assertEqual(entry.main(), 7)
                     fault_log.assert_called_once_with(PATHS.user_dir / "debug")
                     window.return_value.show.assert_called_once()
+                    schedule_cleanup.assert_called_once_with()
                 self.assertFalse((Path(directory) / "assets").exists())
             finally:
                 os.chdir(original)
