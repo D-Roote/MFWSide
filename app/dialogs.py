@@ -58,7 +58,8 @@ class AppMessageBox(QMessageBox):
             _set_native_caption(self)
 
 
-def _show_message(parent, title, text, buttons, default, *, centered=False, compact_title=False):
+def _show_message(parent, title, text, buttons, default, *, centered=False, compact_title=False,
+                  right_padding=0):
     dialog = AppMessageBox(parent, centered=centered, compact_title=compact_title)
     dialog.setOption(QMessageBox.Option.DontUseNativeDialog)
     dialog.setWindowTitle(title.partition(" - ")[0] if compact_title else title)
@@ -68,6 +69,16 @@ def _show_message(parent, title, text, buttons, default, *, centered=False, comp
     dialog.setStandardButtons(buttons)
     dialog.setDefaultButton(default)
     dialog.setEscapeButton(default)
+    if right_padding:
+        dialog.ensurePolished()
+        label = dialog.findChild(QLabel, "qt_msgbox_label")
+        if label is not None:
+            label.ensurePolished()
+            margins = label.contentsMargins()
+            label.setContentsMargins(margins.left(), margins.top(),
+                                     margins.right() + right_padding, margins.bottom())
+            reference_width = label.fontMetrics().horizontalAdvance(text.partition("\n")[0])
+            label.setMinimumWidth(reference_width + margins.left() + margins.right() + right_padding)
     dialog.align_contents()
     try:
         return QMessageBox.StandardButton(dialog.exec())
@@ -75,10 +86,10 @@ def _show_message(parent, title, text, buttons, default, *, centered=False, comp
         dialog.deleteLater()
 
 
-def confirm_deletion(parent, title, text):
+def confirm_deletion(parent, title, text, *, right_padding=0):
     return _show_message(parent, title, text,
                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                         QMessageBox.StandardButton.No)
+                         QMessageBox.StandardButton.No, right_padding=right_padding)
 
 
 def show_notice(parent, title, text):
