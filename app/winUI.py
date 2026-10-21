@@ -27,7 +27,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QAbstractItemView,
 from app.runtime import AppRuntime, PROGRAM_LAUNCH_ENTRY
 from app.paths import PATHS
 from app.controls import PopupOnlyWheelComboBox
-from app.dialogs import confirm_deletion
+from app.dialogs import confirm_deletion, show_notice
+from app.logPresentation import format_log_message
 from app.settingsUI import AssociatedControlLabel, SettingsPanel
 from app.monitorUI import MonitorCoordinator
 from app.extraFeaturesUI import ExtraFeaturesPanel
@@ -1555,6 +1556,7 @@ class MonitorSectionsWidget(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.diagnostic_logs_enabled = False
         self._ui_state_ready = False
         self._first_ui_show = True
         self._saved_ui_state = {}
@@ -2305,6 +2307,7 @@ class MainWindow(QMainWindow):
             self.set_runtime_option_editing_enabled
         )
         self.settings_panel.theme_changed.connect(self.set_title_bar_theme)
+        self.settings_panel.developer_mode_requested.connect(self._enable_developer_mode)
         self.settings_panel.program_changed.connect(
             self.on_program_settings_changed
         )
@@ -2379,7 +2382,21 @@ class MainWindow(QMainWindow):
             self._first_ui_show = False
             self._restore_workspace_sizes()
 
+    def _enable_developer_mode(self):
+        if self.diagnostic_logs_enabled:
+            return
+        self.diagnostic_logs_enabled = True
+        show_notice(self, "개발자 모드", "추가 로그를 표기합니다.")
+
+    def _apply_dialog_title_bar_theme(self, dialog):
+        return apply_windows_title_bar_theme(
+            int(dialog.winId()), self._title_bar_theme,
+            system_color_scheme=self._style_hints.colorScheme())
+
     def append_log(self, message):
+        message = format_log_message(message, diagnostics=self.diagnostic_logs_enabled)
+        if not message.strip():
+            return
         current_time = datetime.now().strftime("%H:%M:%S")
         time_text = f"[{current_time}] "
 

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.controls import PopupOnlyWheelComboBox
+from app.logPresentation import format_log_message
 from app.monitoring import normalize_connection_preferences, supported_presets, window_process_info
 from app.multiExecution import SessionManager, STATE_LABELS, discover_connections
 from app.sessionRuntime import target_identity
@@ -255,7 +256,8 @@ class InstanceCard(QFrame):
         if session.result and session.state == "failed":
             details.append(session.result["message"])
         details.extend(list(session.logs)[-12:])
-        self.status.setToolTip("\n".join(details))
+        self.status.setToolTip(format_log_message("\n".join(details),
+                                                diagnostics=self.panel.window.diagnostic_logs_enabled))
         self.target_combo.setToolTip(self.target_combo.currentText())
         editable = (not session.active and not self.panel.window.isRunning and not self.panel.closing
                     and self.panel.discovery_worker is None and not self.panel.window._completion_pending
@@ -390,7 +392,9 @@ class MultiExecutionPanel(QWidget):
         return daily is not None and daily.active
 
     def report_status(self, message):
-        self.window.append_log(f"[다중 실행] {message}")
+        message = format_log_message(message, diagnostics=self.window.diagnostic_logs_enabled)
+        if message.strip():
+            self.window.append_log(f"[다중 실행] {message}")
 
     def _changed(self, session_id):
         if session_id not in self.manager.sessions:
@@ -410,7 +414,8 @@ class MultiExecutionPanel(QWidget):
 
     def _log(self, session_id, text):
         session = self.manager.sessions.get(session_id)
-        if session:
+        text = format_log_message(text, diagnostics=self.window.diagnostic_logs_enabled)
+        if session and text.strip():
             self.window.append_log(f"[{session.title}] {text}")
 
     def _delete_all(self):

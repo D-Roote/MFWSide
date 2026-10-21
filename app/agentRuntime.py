@@ -183,7 +183,7 @@ class AgentSession:
             entry.process = subprocess.Popen([executable, *spec.arguments, identifier], **options)
             self.log(f"Agent {index} 연결 중입니다. 진단 로그: {entry.log_path}")
             if entry.process.poll() is not None or not client.connect():
-                raise RuntimeError(f"Agent {index}: 연결에 실패했습니다. 실행 환경/SDK 버전과 진단 로그를 확인하세요: {entry.log_path}")
+                raise RuntimeError(f"Agent {index}: 연결에 실패했습니다. 실행 환경/SDK 버전을 확인하세요.\n진단 로그: {entry.log_path}")
             entry.connected = True
             self._check_cancel(cancellation_requested)
             if entry.process.poll() is not None:

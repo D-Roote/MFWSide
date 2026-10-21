@@ -4,7 +4,10 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, QEasingCurve, QPropertyAnimation, Qt, QTime, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
+    QApplication,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QFrame,
     QGraphicsOpacityEffect,
@@ -194,6 +197,11 @@ class AssociatedControlLabel(QLabel):
         super().mouseReleaseEvent(event)
 
 
+KONAMI_CODE = (Qt.Key.Key_Up, Qt.Key.Key_Up, Qt.Key.Key_Down, Qt.Key.Key_Down,
+               Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Left, Qt.Key.Key_Right,
+               Qt.Key.Key_B, Qt.Key.Key_A)
+
+
 class SettingsPanel(QWidget):
     SECTION_TOP_INSET = 4
 
@@ -206,6 +214,7 @@ class SettingsPanel(QWidget):
     program_test_busy_changed = Signal(bool)
     program_test_shutdown_ready = Signal()
     startup_changed = Signal()
+    developer_mode_requested = Signal()
 
     def __init__(
         self,
@@ -225,6 +234,8 @@ class SettingsPanel(QWidget):
         self._program_test_closing = False
         self._program_test_allowed = True
         self._controls_connected = False
+        self._developer_code = ()
+        self._developer_mode_enabled = False
         self.program_test_guard = lambda: True
         self.startup_registration = WindowsStartupRegistration(PATHS.root_dir)
         self.controllers = self._filter_controllers(
@@ -784,8 +795,7 @@ class SettingsPanel(QWidget):
         self.auto_start_wait_spin.valueChanged.connect(self._save)
         self.daily_restart_time.timeChanged.connect(self._save)
         self.program_extra_input.textChanged.connect(self._on_extra_arguments_changed)
-        for section in self._sections:
-            self._watch_section_interactions(section)
+        self._watch_section_interactions(self)
 
     def _watch_section_interactions(self, widget):
         # Watch the controls, their labels, and viewports without filtering the
@@ -1243,12 +1253,34 @@ class SettingsPanel(QWidget):
         label.setMinimumHeight(max(0, label.heightForWidth(max(1, label.width()))))
 
     def eventFilter(self, watched, event):
+        if watched is self and event.type() == QEvent.Type.Hide:
+            self._developer_code = ()
+        if event.type() == QEvent.Type.KeyPress:
+            self._check_developer_shortcut(watched, event)
         if event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.FocusIn, QEvent.Type.KeyPress):
             self._highlight_setting_section(watched)
         if (hasattr(self, "program_path_row") and watched is self.program_path_row.description_label
                 and event.type() in (QEvent.Type.Resize, QEvent.Type.FontChange)):
             self._update_program_path_layout()
         return super().eventFilter(watched, event)
+
+    def _check_developer_shortcut(self, watched, event):
+        # Observe each focused key only once, without stealing normal navigation
+        # or treating text/number/controller editing as a hidden shortcut.
+        if (self._developer_mode_enabled or not self.isVisible()
+                or watched is not QApplication.focusWidget() or event.isAutoRepeat()):
+            return
+        if (isinstance(watched, (QLineEdit, QAbstractSpinBox, QComboBox))
+                or event.modifiers() & (Qt.KeyboardModifier.ControlModifier
+                                        | Qt.KeyboardModifier.AltModifier
+                                        | Qt.KeyboardModifier.MetaModifier)):
+            self._developer_code = ()
+            return
+        self._developer_code = (*self._developer_code, event.key())[-len(KONAMI_CODE):]
+        if self._developer_code == KONAMI_CODE:
+            self._developer_code = ()
+            self._developer_mode_enabled = True
+            self.developer_mode_requested.emit()
 
     def _on_controller_changed(self, _index):
         self._update_controller_details()
