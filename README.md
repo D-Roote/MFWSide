@@ -1,13 +1,16 @@
 # MFWSide
 
-MaaFramework와 PySide6 기반의 Windows용 범용 자동화 실행 앱입니다. 게임별 파이프라인과 리소스를 앱과 분리하여 구성합니다.
+MaaFramework와 PySide6 기반의 Windows용 MAA Framework 범용 실행 앱입니다. 게임별 파이프라인과 리소스를 앱과 분리하여 구성합니다.
+
+---
 
 ## 주요 기능
 
 - 리소스의 `interface.json`에 정의된 작업·세부 옵션 구성과 프리셋 저장
 - Win32·ADB 연결 확인, 화면 캡처·연속 모니터링과 실행 로그 확인
 - 여러 인스턴스의 개별·일괄 실행과 인스턴스별 프리셋 선택
-- 작업 자동 시작, 일일 초기화 재시작, 테마·사용자 설정과 저장 공간 관리
+
+---
 
 ## 사용 방법
 
@@ -17,9 +20,12 @@ MaaFramework와 PySide6 기반의 Windows용 범용 자동화 실행 앱입니�
 
 배포 앱에는 Python이 포함되지만 게임별 리소스는 포함되지 않습니다. **Python Agent를 사용하는 리소스는 별도 Python 실행 환경과 해당 Agent의 의존성이 필요합니다.**
 
-사용자 설정과 세션 로그는 `assets/user/`에 저장됩니다. 앱이나 리소스를 교체할 때 이 폴더는 보존합니다.
+사용자 설정과 세션 로그는 `assets/user/`에 저장됩니다. 앱이나 리소스를 교체할 때 이 폴더를 유지해야 사용자 설정이 유지됩니다.
 
-리소스가 없으면 기본 이름 `MFWSide`로 열리며 작업 실행은 비활성화됩니다. `interface.json`의 모든 기능을 지원하는 것은 아니므로 앱·MaaFramework와 리소스의 호환성을 확인하세요.
+`interface.json`이 없으면 기본 이름 `MFWSide`로 열리며 작업 실행은 비활성화됩니다.  
+`interface.json`의 모든 기능을 지원하는 것은 아니므로 앱·MaaFramework와 리소스의 호환성을 확인하세요.
+
+---
 
 ## 개발 환경
 
@@ -39,9 +45,11 @@ py -3.10 -m venv .venv
 
 폴더형 실행 파일과 압축 배포물 생성 방법, 검증 범위는 [빌드·배포 안내](BUILDING.md)를 참고하세요.
 
+---
+
 ## 참고
 
-소개·기능·사용 안내 구성은 다음 프로젝트를 참고했습니다.
+참고한 프로젝트는 다음과 같습니다.
 
 - [MFAAvalonia](https://github.com/MaaXYZ/MFAAvalonia)
 - [MFW-PyQt6](https://github.com/overflow65537/MFW-PyQt6)
