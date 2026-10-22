@@ -497,13 +497,28 @@ class MultiExecutionPanel(QWidget):
             self.report_status("삭제된 인스턴스의 탐색 결과를 무시했습니다.")
             self.refresh()
             return
+        message = f"대상 {len(found)}개 확인." + (" " + " / ".join(errors) if errors else "")
         if session_id is not None:
             card = self.cards[session_id]
+            current = self.manager.sessions[session_id].connection
+            current_identity = target_identity(current)
+            occupied = {target_identity(session.connection) for session in self.manager.sessions.values()
+                        if session.id != session_id}
+            available = [connection for connection in found if target_identity(connection) not in occupied]
+            if not available:
+                # No search result must erase an existing device's SDK metadata,
+                # or turn a stale default address into a duplicate connection.
+                card.set_connection(current)
+                if found:
+                    message += " 다른 인스턴스에서 사용 중이므로 사용 가능한 대상이 없습니다."
+                self.report_status(message)
+                self.refresh()
+                return
             previous_emulator = card.emulator_combo.currentData() or {}
             card.target_combo.blockSignals(True)
             card.target_combo.clear()
             card.target_combo.addItem("대상을 선택하세요.", None)
-            card.targets = [deepcopy(connection["target"]) for connection in found]
+            card.targets = [deepcopy(connection["target"]) for connection in available]
             for target in card.targets:
                 card.target_combo.addItem(target["label"], target["key"])
             card.target_combo.blockSignals(False)
@@ -515,10 +530,11 @@ class MultiExecutionPanel(QWidget):
                 if emulator == previous_emulator:
                     card.emulator_combo.setCurrentIndex(card.emulator_combo.count() - 1)
             card.emulator_combo.blockSignals(False)
-            if found:
-                card.target_combo.setCurrentIndex(1)
-            else:
-                card._configure()
+            selected = next((index for index, connection in enumerate(available, 1)
+                             if target_identity(connection) == current_identity), 1)
+            card.target_combo.setCurrentIndex(selected)
+            if len(available) != len(found):
+                message += f" 사용 가능한 대상 {len(available)}개."
         else:
             if self.manager.active or self.window.isRunning or self.window._completion_pending:
                 self.report_status("작업이 시작되어 자동 인식 결과를 적용하지 않았습니다. 작업 종료 후 다시 시도하세요.")
@@ -533,7 +549,7 @@ class MultiExecutionPanel(QWidget):
                     card.emulator_combo.addItem(emulator["label"], emulator)
             if ids:
                 self.start_sessions(ids, "check", snapshot)
-        self.report_status(f"대상 {len(found)}개 확인." + (" " + " / ".join(errors) if errors else ""))
+        self.report_status(message)
         self.refresh()
 
     @property
