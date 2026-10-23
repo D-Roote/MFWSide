@@ -644,7 +644,10 @@ class MonitorCoordinator(QObject):
                 else:
                     self.status = "대상이 없습니다. 프로그램 실행 상태를 확인하세요."
             elif kind == "connect":
+                self.targets = [result if item.key == result.key else item for item in self.targets]
                 self.status = f"연결 성공 · {result.label}"
+                if result.kind == "Adb" and result.emulator:
+                    self.status += f" · 최소화 창: {result.emulator['label']}"
             elif kind == "disconnect":
                 self.status = "사전 연결을 해제했습니다."
         if kind == "disconnect" and not succeeded:

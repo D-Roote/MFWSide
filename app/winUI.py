@@ -2540,6 +2540,12 @@ class MainWindow(QMainWindow):
             minimize_window = self.ui.minimizeEnableBtn.isChecked()
 
         program_settings = self.settings_panel.program_settings()
+        if program_settings.get("controller", {}).get("type") == "Adb":
+            from app.sessionRuntime import serialize_target
+            target = next((target for target in self.monitor.targets
+                           if target.kind == "Adb" and target.key == self.monitor.preferences.get("address")), None)
+            if target is not None:
+                program_settings["_adb_target"] = serialize_target(target)
         if startup_request and self.app_startup.launch_identity:
             program_settings["_startup_launcher"] = dict(self.app_startup.launch_identity)
         self.worker = RuntimeWorker(

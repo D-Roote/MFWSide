@@ -13,6 +13,7 @@ from app.logPresentation import format_log_message
 from app.monitoring import normalize_connection_preferences, supported_presets, window_process_info
 from app.multiExecution import SessionManager, STATE_LABELS, discover_connections
 from app.sessionRuntime import target_identity
+from app.adbWindow import match_windows, window_identity
 from app.runtime import PROGRAM_LAUNCH_ENTRY
 
 
@@ -54,6 +55,13 @@ class DiscoveryWorker(QThread):
                     pid, path = window_process_info(hwnd)
                     if pid and pid != os.getpid():
                         self.emulators.append({"hwnd": hwnd, "pid": pid, "path": path, "label": window.window_name})
+                matches, ambiguous = match_windows([connection["target"] for connection in self.result[0]], self.emulators)
+                for connection in self.result[0]:
+                    key = connection["target"].get("key")
+                    if key in matches:
+                        connection["emulator"] = matches[key]
+                    elif key in ambiguous:
+                        connection["target"]["_window_ambiguous"] = True
         except Exception as error:
             self.result = ([], [str(error)])
 
@@ -127,6 +135,7 @@ class InstanceCard(QFrame):
         self.emulator_combo = PopupOnlyWheelComboBox()
         self.emulator_combo.setObjectName("monitorComboBox")
         self.emulator_combo.setAccessibleName("ADB 편의 최소화 창")
+        self.emulator_combo.setToolTip("ADB 앱플레이어 이름과 창 제목으로 자동 선택합니다. 필요한 경우 직접 변경하세요.")
         self.emulator_combo.addItem("최소화 대상 선택", {})
         for widget in (self.preset_combo, self.target_combo, self.adb_path, self.address, self.emulator_combo):
             widget.setMinimumWidth(0)
@@ -166,7 +175,7 @@ class InstanceCard(QFrame):
         self.target_combo.currentIndexChanged.connect(self._target_changed)
         self.adb_path.editingFinished.connect(self._configure)
         self.address.editingFinished.connect(self._configure)
-        self.emulator_combo.currentIndexChanged.connect(self._configure)
+        self.emulator_combo.currentIndexChanged.connect(self._emulator_changed)
         self.task_preset_combo.currentIndexChanged.connect(self._task_preset_changed)
         self.set_connection(session.connection)
         self._syncing = False
@@ -226,6 +235,41 @@ class InstanceCard(QFrame):
         target = self.current_target()
         if not self._syncing and target and target.get("kind") == "Adb":
             self.address.setText(target["key"])
+            previous = self.panel.manager.sessions[self.session_id].connection
+            if (not previous.get("emulator") or (previous.get("target") or {}).get("key") != target["key"]
+                    or previous["emulator"].get("automatic")):
+                self._auto_select_emulator(target)
+        self._configure()
+
+    def _auto_select_emulator(self, target):
+        windows = [self.emulator_combo.itemData(index) for index in range(1, self.emulator_combo.count())]
+        others = [session.connection for session in self.panel.manager.sessions.values() if session.id != self.session_id]
+        reserved = [(connection.get("target") if (connection.get("target") or {}).get("kind") == "Win32"
+                     else connection.get("emulator")) or {} for connection in others]
+        targets = [*self.targets, *(connection.get("target") or {} for connection in others)]
+        matches, ambiguous = match_windows(targets, windows, reserved=reserved)
+        if target["key"] in ambiguous:
+            target["_window_ambiguous"] = True
+        window = {} if target.get("_window_ambiguous") else matches.get(target["key"], {})
+        self.emulator_combo.blockSignals(True)
+        selected = 0
+        if window:
+            selected = next((index for index in range(1, self.emulator_combo.count())
+                             if window_identity(self.emulator_combo.itemData(index)) == window_identity(window)), 0)
+            if selected:
+                self.emulator_combo.setItemData(selected, window)
+        self.emulator_combo.setCurrentIndex(selected)
+        self.emulator_combo.blockSignals(False)
+
+    def _emulator_changed(self):
+        if not self._syncing:
+            # Even a formerly auto-selected entry becomes an explicit override
+            # when the user chooses it from the dropdown.
+            window = self.emulator_combo.currentData()
+            if isinstance(window, dict) and window.get("automatic"):
+                window = dict(window)
+                window.pop("automatic", None)
+                self.emulator_combo.setItemData(self.emulator_combo.currentIndex(), window)
         self._configure()
 
     def _configure(self):
@@ -238,6 +282,10 @@ class InstanceCard(QFrame):
         if adb and preferences["address"]:
             if not target or target.get("key") != preferences["address"]:
                 target = {"kind": "Adb", "key": preferences["address"], "label": preferences["address"]}
+                if (self.emulator_combo.currentData() or {}).get("automatic"):
+                    self.emulator_combo.blockSignals(True)
+                    self.emulator_combo.setCurrentIndex(0)
+                    self.emulator_combo.blockSignals(False)
         try:
             self.panel.manager.configure(self.session_id, {
                 "preset": self.preset_combo.currentData(), "target": deepcopy(target), "preferences": preferences,
@@ -249,6 +297,19 @@ class InstanceCard(QFrame):
 
     def refresh(self):
         session = self.panel.manager.sessions[self.session_id]
+        emulator = session.connection.get("emulator") or {}
+        if self.emulator_combo.currentData() != emulator:
+            self.emulator_combo.blockSignals(True)
+            index = (next((index for index in range(1, self.emulator_combo.count())
+                           if window_identity(self.emulator_combo.itemData(index)) == window_identity(emulator)), -1)
+                     if emulator else 0)
+            if emulator and index < 0:
+                self.emulator_combo.addItem(emulator.get("label", "자동 선택한 창"), emulator)
+                index = self.emulator_combo.count() - 1
+            if emulator:
+                self.emulator_combo.setItemData(index, emulator)
+            self.emulator_combo.setCurrentIndex(index)
+            self.emulator_combo.blockSignals(False)
         self.sync_task_presets()
         state = STATE_LABELS.get(session.state, session.state)
         self.status.setText(state)
@@ -445,6 +506,11 @@ class MultiExecutionPanel(QWidget):
                 if session_id not in requests:
                     requests[session_id] = (deepcopy(snapshot) if snapshot_given or mode != "run"
                                             else self.snapshot_for_session(session_id, snapshot))
+                requests[session_id]["reserved_windows"] = [
+                    deepcopy((other.connection.get("target") if (other.connection.get("target") or {}).get("kind") == "Win32"
+                              else other.connection.get("emulator")) or {})
+                    for other in self.manager.sessions.values() if other.id != session_id
+                ]
                 self.manager.validate_start(session_id, requests[session_id])
                 valid.append(session_id)
             except ValueError as error:
@@ -546,7 +612,9 @@ class MultiExecutionPanel(QWidget):
             for instance_id in ids:
                 card = self.cards[instance_id]
                 for emulator in worker.emulators:
-                    card.emulator_combo.addItem(emulator["label"], emulator)
+                    if not any(window_identity(card.emulator_combo.itemData(index)) == window_identity(emulator)
+                               for index in range(1, card.emulator_combo.count())):
+                        card.emulator_combo.addItem(emulator["label"], emulator)
             if ids:
                 self.start_sessions(ids, "check", snapshot)
         self.report_status(message)

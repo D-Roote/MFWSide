@@ -89,6 +89,8 @@ class ConnectionTarget:
     device: object = None
     process_path: str = ""
     pid: int = 0
+    emulator: object = None
+    emulator_ambiguous: bool = False
 
 
 class MonitoringDisconnected(RuntimeError):
@@ -259,6 +261,14 @@ class MonitoringService:
             job = self.controller.post_connection().wait()
             if not job.succeeded or not self.controller.connected:
                 raise RuntimeError("연결 실패: 프로그램 실행 상태 또는 ADB 주소/승인을 확인하세요.")
+            if target.kind == "Adb":
+                from dataclasses import replace
+                from app.adbWindow import desktop_windows, match_windows
+                matches, ambiguous = match_windows([*self.targets, target], desktop_windows())
+                window = matches.get(target.key)
+                if window or target.key in ambiguous:
+                    target = replace(target, emulator=window, emulator_ambiguous=target.key in ambiguous)
+                    self.targets = [target if item.key == target.key else item for item in self.targets]
             self.connected_target = target
             return target
         except Exception:

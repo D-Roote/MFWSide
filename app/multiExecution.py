@@ -13,6 +13,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from app.monitoring import MonitoringService, supported_presets
 from app.sessionRuntime import SessionRuntime, needs_desktop_lock, resolve_preset, serialize_target, target_identity
+from app.adbWindow import window_identity
 
 
 ACTIVE_STATES = {"starting", "waiting", "running", "checking", "stopping"}
@@ -130,6 +131,9 @@ def session_process(snapshot, connection, mode, stop_event, events, desktop_lock
         if stopper is not None:
             stopper.join(6)
         if runtime is not None:
+            connection = getattr(runtime, "connection", {})
+            if isinstance(connection, dict) and "emulator" in connection:
+                outcome["emulator"] = deepcopy(connection["emulator"])
             try:
                 success, message = runtime.release_session()
                 if not success:
@@ -256,6 +260,7 @@ class SessionManager(QObject):
         self.validate_start(session_id, snapshot)
         request = deepcopy(snapshot)
         request["session_id"] = session_id
+        request["client_pid"] = os.getpid()
         if mode == "run" and not request.get("queue"):
             raise ValueError("실행할 작업을 선택하거나 작업 프리셋을 확인하세요.")
         session.mode, session.result = mode, None
@@ -335,6 +340,8 @@ class SessionManager(QObject):
                 result = {**result, "succeeded": False,
                           "message": result["message"] + f"\n실행 프로세스 비정상 종료: {exit_code:#x}. 세션 진단 로그를 확인하세요."}
             session.result = result
+            if isinstance(result.get("emulator"), dict) and (not result["emulator"] or window_identity(result["emulator"])):
+                session.connection["emulator"] = deepcopy(result["emulator"])
             session.state = ("stopped" if cancelled else "ready" if result["succeeded"] and session.mode == "check"
                              else "completed" if result["succeeded"] else "failed")
             session.process.close()

@@ -135,7 +135,8 @@ class IndividualAdbDiscoveryTests(unittest.TestCase):
                 self.assertIsNone(self.panel.discovery_worker)
                 value = self.panel.manager.sessions[sid].connection
                 self.assertEqual((value.get("target") or {}).get("key"), expected["target"]["key"])
-                self.assertEqual(value["target"]["device"], expected["target"]["device"])
+                self.assertEqual(value["target"]["device"], {**expected["target"]["device"],
+                                                              "name": devices[self.found.index(expected)].name})
             self.assertEqual(discover.call_count, 4)
             controller.assert_not_called()
             start.assert_not_called()

@@ -211,7 +211,8 @@ class AppRuntime:
         return self.controller_config.get("type") == "Adb"
 
     def _get_adb_execution_connection(self, program_settings):
-        return prepare_adb_connection((program_settings or {}).get("connection"))
+        settings = program_settings or {}
+        return prepare_adb_connection(settings.get("connection"), settings.get("_adb_target"))
 
     def _load_interface(self):
         try:
@@ -763,7 +764,10 @@ class AppRuntime:
     ):
         if self._get_controller_config(controller_settings).get("type") == "Adb":
             self.controller_config, self._controller_selection_status = self._select_controller_config(controller_settings)
-            self.controller = AdbController(**adb_controller_options(self._adb_execution_connection))
+            from app.adbWindow import bind_runtime_window
+            options = adb_controller_options(self._adb_execution_connection)
+            bind_runtime_window(self)
+            self.controller = AdbController(**options)
             self._controller_activity = ControllerActivitySink()
             self._controller_sink_id = self.controller.add_sink(self._controller_activity)
             return (True, "ADB 컨트롤러를 생성했습니다.") if self._controller_sink_id is not None else (False, "컨트롤러 완료 콜백 연결에 실패했습니다.")
@@ -1364,6 +1368,8 @@ class AppRuntime:
                 self._adb_launcher_pid = None
                 self._adb_launcher_path = None
                 self._adb_minimized_windows.clear()
+                self._adb_minimize_reported = False
+                self._adb_minimize_skipped = False
                 self._startup_cancellation_requested = None
                 if cleanup_errors:
                     return False, " ".join(cleanup_errors)

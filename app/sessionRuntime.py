@@ -8,6 +8,7 @@ from maa.controller import AdbController
 from app.monitoring import supported_presets, window_process_info
 from app.runtime import AppRuntime, ControllerActivitySink
 from app.adbStartup import adb_controller_options, launch_adb_program, minimize_adb_window
+from app.adbWindow import bind_runtime_window
 
 
 def target_identity(connection):
@@ -32,6 +33,12 @@ def serialize_target(target):
             "screencap_methods": int(device.screencap_methods),
             "input_methods": int(device.input_methods), "config": deepcopy(device.config),
         }
+        if isinstance(getattr(device, "name", None), str) and device.name.strip():
+            result["device"]["name"] = device.name
+    if getattr(target, "emulator", None):
+        result["emulator"] = deepcopy(target.emulator)
+    if getattr(target, "emulator_ambiguous", False):
+        result["_window_ambiguous"] = True
     return result
 
 
@@ -107,6 +114,7 @@ class SessionRuntime(AppRuntime):
             options = adb_controller_options(self.connection)
         except ValueError as error:
             return False, str(error)
+        bind_runtime_window(self)
         self.controller = AdbController(**options)
         self._controller_activity = ControllerActivitySink()
         self._controller_sink_id = self.controller.add_sink(self._controller_activity)
