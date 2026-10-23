@@ -19,7 +19,7 @@ py -3.10 -m venv .venv
 
 `packaging/MFWSide.spec`은 maa의 동적 DLL·메타데이터와 앱 UI/QSS/아이콘을 명시적으로 수집합니다. Android 캡처/입력용 MaaAgentBinary는 모든 아키텍처의 파일과 minicap .so까지 데이터로 보존합니다. 이는 리소스의 Python Agent 실행 환경과 다릅니다. QtUiTools/QtSvg와 플랫폼·SVG 플러그인, NumPy도 포함합니다. 앱에서 사용하지 않는 Python OpenCV 패키지(`opencv-python`, `cv2`)는 설치·번들 대상에서 제외하지만 MaaFW가 사용하는 별도 opencv_world4_maa.dll은 유지합니다. BUILD-INFO.json의 packages에는 빌드에 사용하는 패키지 버전을 기록합니다.
 
-루트의 `VERSION`을 `1.0.0`과 같은 `주.부.수정` 형식으로 관리합니다. 빌드 정보, EXE의 파일·제품 버전과 ZIP 이름에 동일하게 적용되며, 배포 파일은 `dist/MFWSide-1.0.0-windows-x64.zip`과 `.zip.sha256`입니다. Windows 내부의 숫자 버전은 `1.0.0.0`으로 저장합니다. 릴리즈 태그는 `v1.0.0`, 제목은 `MFWSide 1.0.0` 형식을 사용합니다.
+루트의 `VERSION`을 `1.1.0`과 같은 `주.부.수정` 형식으로 관리합니다. 빌드 정보, EXE의 파일·제품 버전과 ZIP 이름에 동일하게 적용되며, 배포 파일은 `dist/MFWSide-1.1.0-windows-x64.zip`과 `.zip.sha256`입니다. Windows 내부의 숫자 버전은 `1.1.0.0`으로 저장합니다. 릴리즈 태그는 `v1.1.0`, 제목은 `MFWSide 1.1.0` 형식을 사용합니다.
 
 앱 단독 빌드는 `Start-ANReroll.cmd`를 생성하지 않으며 `License.Mareroll`·`License.MaaReroll`을 포함하지 않습니다. 라이선스 수집에서도 해당 리소스 전용 파일만 제외하고 Python·Qt·MaaFramework 등 앱 의존성의 라이선스는 보존합니다. 이 파일들이 다른 경로에서 번들에 유입되면 압축 전에 빌드를 중단합니다. 리소스를 별도로 배포할 때의 원저작자 고지 의무는 별도로 확인해야 합니다.
 
