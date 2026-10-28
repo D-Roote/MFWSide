@@ -6,6 +6,7 @@ import json
 import multiprocessing as mp
 import os
 from pathlib import Path
+from queue import Empty
 import shutil
 import subprocess
 import sys
@@ -95,6 +96,19 @@ def windows_for_process(pid):
     return result
 
 
+def verify_first_install_defaults(config):
+    expected = {
+        'minimize_enabled': False, 'minimize_app_on_task_start': False,
+        'program_launch_task_enabled': False, 'allow_option_edits_while_running': True,
+        'clear_log_on_start': True, 'auto_cleanup_on_exit': True,
+    }
+    if any(config.get('general', {}).get(key) is not value for key, value in expected.items()):
+        raise RuntimeError('The frozen app has unexpected first-install setting defaults')
+    if any(value for value in config.get('startup', {}).values() if isinstance(value, bool)):
+        raise RuntimeError('Startup actions must default to disabled')
+    return True
+
+
 def verify_gui(directory):
     user32 = ctypes.WinDLL('user32', use_last_error=True)
     user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
@@ -128,18 +142,69 @@ def verify_gui(directory):
         if not config_path.is_file():
             raise RuntimeError('User data was not created beside the EXE')
         config = json.loads(config_path.read_text(encoding='utf-8'))
-        if config['general'].get('minimize_app_on_task_start') is not False:
-            raise RuntimeError('The frozen app is missing the latest general setting')
+        verify_first_install_defaults(config)
         if not user32.PostMessageW(main_window, 0x0010, 0, 0):
             raise ctypes.WinError(ctypes.get_last_error())
         if process.wait(timeout=15) != 0:
             raise RuntimeError(f'Frozen GUI failed during shutdown: {process.returncode}')
         return {'window_title': 'MFWSide', 'clean_exit': True, 'python_removed_from_path': True,
-                'alternate_working_directory': True, 'latest_settings_present': True}
+                'alternate_working_directory': True, 'latest_settings_present': True,
+                'first_install_defaults': True}
     finally:
         if process.poll() is None:
             process.terminate()  # Only this freshly spawned empty test app.
             process.wait(timeout=10)
+
+
+def verify_session_ipc(context):
+    project = str(Path(__file__).resolve().parents[1])
+    sys.path.insert(0, project)
+    processes, inbox = [], None
+    try:
+        # Pure stdlib application types: never construct controllers or tasks.
+        from app.sessionIPC import SessionEventInbox, SharedFlag
+        flag = SharedFlag(context)
+        writer = context.Process(target=flag.set)
+        processes.append(writer)
+        writer.start()
+        if not flag.wait(20):
+            raise RuntimeError('Frozen session cancellation flag was not shared')
+        writer.join(timeout=10)
+        if writer.exitcode != 0:
+            raise RuntimeError(f'Frozen shared-flag worker failed: {writer.exitcode}')
+
+        inbox = SessionEventInbox(context)
+        expected = ('result', {'succeeded': True, 'message': 'frozen-session-pipe-ok'})
+        sender = context.Process(target=inbox.sender.put, args=(expected,))
+        processes.append(sender)
+        sender.start()
+        inbox.close_sender()
+        inbox.start()
+        deadline = time.monotonic() + 20
+        while True:
+            try:
+                received = inbox.get_nowait()
+                break
+            except Empty:
+                if inbox.error or time.monotonic() >= deadline:
+                    raise RuntimeError('Frozen session pipe did not deliver its result: ' + inbox.error)
+                time.sleep(0.01)
+        if received != expected:
+            raise RuntimeError('Frozen session pipe returned unexpected data')
+        sender.join(timeout=10)
+        if sender.exitcode != 0:
+            raise RuntimeError(f'Frozen pipe worker failed: {sender.exitcode}')
+        return True
+    finally:
+        for process in processes:
+            if process.pid is not None and process.is_alive():
+                process.terminate()  # Only the fresh, headless verification worker.
+                process.join(timeout=10)
+            if process.pid is not None:
+                process.close()
+        if inbox is not None:
+            inbox.close()
+        sys.path.remove(project)
 
 
 def verify_spawn(executable):
@@ -165,7 +230,7 @@ def verify_spawn(executable):
         process.join(timeout=10)
         if process.exitcode != 0:
             raise RuntimeError(f'Frozen spawn failed: {process.exitcode}')
-        return True
+        return {'standard_queue': True, 'session_ipc': verify_session_ipc(context)}
     finally:
         sys.executable = old_executable
         if old_frozen is None:
@@ -217,7 +282,9 @@ def main(argv=None):
         isolated = temporary / 'MFWSide'
         shutil.copytree(directory, isolated)
         result['gui'] = verify_gui(isolated)
-        result['frozen_multiprocessing_spawn'] = verify_spawn(isolated / 'MFWSide.exe')
+        spawn = verify_spawn(isolated / 'MFWSide.exe')
+        result['frozen_multiprocessing_spawn'] = spawn['standard_queue']
+        result['frozen_session_ipc'] = spawn['session_ipc']
         result['ok'] = True
         success = True
     finally:

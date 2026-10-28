@@ -1,5 +1,7 @@
 '''Release archives reject external data and verification uses isolated defaults.'''
 from pathlib import Path
+from copy import deepcopy
+import multiprocessing as mp
 import os
 import sys
 import tempfile
@@ -112,6 +114,25 @@ class WindowsBuildToolingTests(unittest.TestCase):
     def test_native_manifest_refuses_an_incomplete_bundle(self):
         with self.assertRaisesRegex(RuntimeError, 'Missing bundle files'):
             verify_windows_build.inspect_bundle(self.bundle)
+
+    def test_first_install_probe_accepts_only_the_requested_checked_defaults(self):
+        config = {'general': {
+            'minimize_enabled': False, 'minimize_app_on_task_start': False,
+            'program_launch_task_enabled': False, 'allow_option_edits_while_running': True,
+            'clear_log_on_start': True, 'auto_cleanup_on_exit': True,
+        }, 'startup': {'auto_start_tasks': False, 'task_wait_seconds': 0}}
+        self.assertTrue(verify_windows_build.verify_first_install_defaults(config))
+        for key in config['general']:
+            changed = deepcopy(config)
+            changed['general'][key] = not config['general'][key]
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                verify_windows_build.verify_first_install_defaults(changed)
+        config['startup']['auto_start_tasks'] = True
+        with self.assertRaises(RuntimeError):
+            verify_windows_build.verify_first_install_defaults(config)
+
+    def test_session_probe_uses_spawn_and_real_pipe_without_native_controllers(self):
+        self.assertTrue(verify_windows_build.verify_session_ipc(mp.get_context('spawn')))
 
     def test_build_guard_preserves_existing_output_user_data(self):
         assets = self.root / 'dist/MFWSide/assets/user'
