@@ -12,7 +12,7 @@ import sys
 from ctypes import wintypes
 
 from PySide6.QtCore import QByteArray, QDir, QEvent, QMimeData, QModelIndex, QObject, QPoint, QRectF, QSize, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import (QTextCursor,
+from PySide6.QtGui import (QTextCursor, QTextOption,
                            QColor, QCursor, QDrag, QIcon, QPainter, QPen, QPixmap)
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (QApplication, QMainWindow, QAbstractItemView,
@@ -1947,6 +1947,9 @@ class MainWindow(QMainWindow):
             self._update_log_follow_button
         )
         self.ui.logPrintText.setContextMenuPolicy(Qt.CustomContextMenu)
+        # Windows paths have a word boundary at the drive colon. Word-first
+        # wrapping otherwise leaves just `C:` above an arbitrarily long path.
+        self.ui.logPrintText.setWordWrapMode(QTextOption.WrapMode.WrapAnywhere)
         self.ui.logPrintText.customContextMenuRequested.connect(self.show_log_context_menu)
 
         if hasattr(self.ui, 'minimizeEnableBtn'):
