@@ -394,14 +394,14 @@ class ManagementUITests(unittest.TestCase):
         self.assertFalse(self.window._reset_settings_pending)
 
     def test_reset_closes_without_overwriting_new_defaults(self):
-        self.window.settings_panel.runtime_edit_checkbox.setChecked(True)
+        self.window.settings_panel.runtime_edit_checkbox.setChecked(False)
         with patch("app.winUI.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes):
             self.window._reset_all_settings()
         self.assertTrue(self.window._reset_settings_pending)
         self.window.save_user_config()
         self.assertEqual(json.loads((self.user / "config/user_config.json").read_text()), {})
         config = json.loads((self.user / "config/maa_config.json").read_text())
-        self.assertFalse(config["general"]["allow_option_edits_while_running"])
+        self.assertTrue(config["general"]["allow_option_edits_while_running"])
 
     def test_reset_during_run_is_blocked_before_confirmation(self):
         self.window.isRunning = True

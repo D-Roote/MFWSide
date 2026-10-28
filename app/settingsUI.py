@@ -54,8 +54,8 @@ DEFAULT_MAA_CONFIG = {
     "general": {
         "minimize_enabled": False,
         "minimize_app_on_task_start": False,
-        "program_launch_task_enabled": True,
-        "allow_option_edits_while_running": False,
+        "program_launch_task_enabled": False,
+        "allow_option_edits_while_running": True,
         "clear_log_on_start": True,
         "auto_cleanup_on_exit": True,
     },

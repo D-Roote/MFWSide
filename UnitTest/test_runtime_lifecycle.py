@@ -1393,8 +1393,8 @@ class SettingsStoreTests(unittest.TestCase):
 
         self.assertFalse(config["general"]["minimize_enabled"])
         self.assertFalse(config["general"]["minimize_app_on_task_start"])
-        self.assertTrue(config["general"]["program_launch_task_enabled"])
-        self.assertFalse(
+        self.assertFalse(config["general"]["program_launch_task_enabled"])
+        self.assertTrue(
             config["general"]["allow_option_edits_while_running"]
         )
         self.assertTrue(config["general"]["clear_log_on_start"])
@@ -1563,7 +1563,7 @@ class UILifecycleTests(unittest.TestCase):
         if sys.platform == "win32" and font.is_file():
             QFontDatabase.addApplicationFont(str(font))
 
-    def setUp(self):
+    def setUp(self, *, existing_settings=True):
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
         temp = temp_dir.name
@@ -1686,6 +1686,13 @@ class UILifecycleTests(unittest.TestCase):
             "controller": ["Win32PrintWindow", "Win32FramePool"]
         }
         runtime.log_sink = LogSinkFocus()
+        if existing_settings:
+            # Lifecycle tests exercise an existing user's explicit choices,
+            # not first-install defaults. Cold-start tests opt out below.
+            SettingsStore._write_json(runtime.user_dir / "config" / "maa_config.json", {
+                "general": {"program_launch_task_enabled": True,
+                            "allow_option_edits_while_running": False},
+            })
         with patch("app.winUI.AppRuntime", return_value=runtime):
             self.window = MainWindow()
         self.addCleanup(self.window.deleteLater)
