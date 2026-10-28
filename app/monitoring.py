@@ -14,6 +14,7 @@ from maa.toolkit import Toolkit
 
 from app.pg_init import resolve_manual_program_path
 from app.programLaunch import is_shortcut
+from app.adbPolicy import shared_adb_options
 
 
 def supported_presets(interface, resource_config):
@@ -232,18 +233,18 @@ class MonitoringService:
                 target = next((t for t in self.targets if t.key == preferences["address"]), None)
             if target is not None and target.device is not None:
                 device = target.device
-                factory = lambda: AdbController(
-                    adb_path=device.adb_path, address=device.address,
-                    screencap_methods=device.screencap_methods,
-                    input_methods=device.input_methods, config=device.config,
-                )
+                factory = lambda: AdbController(**shared_adb_options({
+                    "adb_path": device.adb_path, "address": device.address,
+                    "screencap_methods": device.screencap_methods,
+                    "input_methods": device.input_methods, "config": device.config,
+                }))
             elif preferences["adb_path"] and preferences["address"]:
                 if not Path(preferences["adb_path"]).is_file():
                     raise ValueError("ADB 실행 파일 경로를 확인하세요.")
                 target = ConnectionTarget(preferences["address"], preferences["address"], "Adb")
-                factory = lambda: AdbController(
-                    adb_path=preferences["adb_path"], address=preferences["address"],
-                )
+                factory = lambda: AdbController(**shared_adb_options({
+                    "adb_path": preferences["adb_path"], "address": preferences["address"],
+                }))
             else:
                 raise ValueError("ADB 기기를 선택하거나 실행 파일과 주소를 입력하세요.")
         self.close()

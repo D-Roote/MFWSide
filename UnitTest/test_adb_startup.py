@@ -154,7 +154,10 @@ class AdbRuntimeIntegrationTests(_PatchedTest):
 
     def test_main_adb_connects_after_wait_without_win32_window_operations(self):
         self.assertTrue(self.initialize()[0])
-        self.assertEqual(self.factory.call_args.kwargs, {"adb_path": str(self.adb), "address": "127.0.0.1:5555"})
+        self.assertEqual(self.factory.call_args.kwargs, {
+            "adb_path": str(self.adb), "address": "127.0.0.1:5555",
+            "config": {"command": {"KillServer": ["{ADB}", "version"]}},
+        })
         self.assertGreaterEqual(self.controller_times[0], 60)
         self.win_factory.assert_not_called()
         self.runtime._user32.MoveWindow.assert_not_called()

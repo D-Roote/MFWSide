@@ -122,7 +122,9 @@ class MonitoringServiceTests(unittest.TestCase):
         controller = MagicMock()
         with patch("app.monitoring.AdbController", return_value=controller) as factory:
             self.service.connect("Android", targets[0].key)
-        self.assertEqual(factory.call_args.kwargs["config"], device.config)
+        self.assertEqual(factory.call_args.kwargs["config"],
+                         {**device.config, "command": {"KillServer": ["{ADB}", "version"]}})
+        self.assertEqual(device.config, {"test": True})
         self.assertEqual(factory.call_args.kwargs["screencap_methods"], 16)
 
     def test_manual_adb_requires_valid_path_and_address(self):
@@ -154,7 +156,7 @@ class MonitoringServiceTests(unittest.TestCase):
         with patch("app.monitoring.AdbController", return_value=controller) as factory:
             self.service.connect("Android", device.address, {"adb_path": str(new_path), "address": device.address})
         self.assertEqual(factory.call_args.kwargs["adb_path"], str(new_path))
-        self.assertNotIn("config", factory.call_args.kwargs)
+        self.assertEqual(factory.call_args.kwargs["config"], {"command": {"KillServer": ["{ADB}", "version"]}})
 
     def test_capture_copies_bgr_frame_and_rejects_empty_images(self):
         controller = MagicMock()

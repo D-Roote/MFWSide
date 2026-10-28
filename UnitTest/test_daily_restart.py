@@ -314,10 +314,10 @@ class DailyRestartUITests(unittest.TestCase):
 
     def test_running_instances_are_snapshotted_and_resumed_individually(self):
         self.enable()
-        from test_multi_execution import FakeContext, connection
+        from test_multi_execution import FakeContext, FakeQueue, connection
         manager = self.window.multi_panel.manager
         manager.context = FakeContext()
-        manager.desktop_lock = manager.context.Lock()
+        manager.event_channel_factory = FakeQueue
         self.addCleanup(manager.timer.stop)
         ids = []
         for number in (41, 42):

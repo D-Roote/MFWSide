@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 import unittest
 
 import test_runtime_lifecycle as fixtures
-from test_multi_execution import FakeContext, connection
+from test_multi_execution import FakeContext, FakeQueue, connection
 from PySide6.QtCore import Qt
 from app.multiExecution import SessionManager
 
@@ -25,7 +25,7 @@ class InstanceTaskPresetTests(unittest.TestCase):
         self.panel = self.window.multi_panel
         self.manager = self.panel.manager
         self.manager.context = FakeContext()
-        self.manager.desktop_lock = self.manager.context.Lock()
+        self.manager.event_channel_factory = FakeQueue
         self.addCleanup(self.stop)
         self.window.show()
         self.window.ui.extraFeaturesNavButton.click()

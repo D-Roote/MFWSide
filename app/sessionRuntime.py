@@ -2,6 +2,7 @@
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
+import threading
 
 from maa.controller import AdbController
 
@@ -9,6 +10,10 @@ from app.monitoring import supported_presets, window_process_info
 from app.runtime import AppRuntime, ControllerActivitySink
 from app.adbStartup import adb_controller_options, launch_adb_program, minimize_adb_window
 from app.adbWindow import bind_runtime_window
+
+
+CONNECTION_CHECK_INTERVAL_SECONDS = 0.5
+CONNECTION_FAILURE_COUNT = 2
 
 
 def target_identity(connection):
@@ -65,6 +70,8 @@ class SessionRuntime(AppRuntime):
         self.snapshot = deepcopy(snapshot)
         self.connection = deepcopy(connection)
         self.session_preset = resolve_preset(snapshot, connection)
+        self._connection_watch_stop = threading.Event()
+        self._connection_watch = None
         super().__init__()
         self.interface_path = Path(snapshot["interface_path"])
         self.user_dir = Path(user_dir)
@@ -72,6 +79,40 @@ class SessionRuntime(AppRuntime):
     def _load_interface(self):
         self.interface_missing = self.snapshot.get("interface_missing") is True
         return deepcopy(self.snapshot["interface"])
+
+    def start_connection_watch(self, disconnected):
+        self.stop_connection_watch()
+        self._connection_watch_stop = stop = threading.Event()
+
+        def watch():
+            failures = 0
+            while not stop.wait(CONNECTION_CHECK_INTERVAL_SECONDS):
+                try:
+                    controller = self.controller
+                    if controller is None:
+                        return
+                    connected = (bool(controller.connected) if self.is_adb
+                                 else self._find_target_window()[0] is not None)
+                    controller = None
+                except Exception:
+                    connected = False
+                failures = 0 if connected else failures + 1
+                if failures >= CONNECTION_FAILURE_COUNT and not stop.is_set():
+                    disconnected("연결 대상이 종료되거나 연결이 해제되었습니다. 해당 인스턴스의 작업만 중지합니다.")
+                    return
+
+        self._connection_watch = threading.Thread(target=watch, name="session-connection", daemon=True)
+        self._connection_watch.start()
+
+    def stop_connection_watch(self):
+        self._connection_watch_stop.set()
+        thread, self._connection_watch = self._connection_watch, None
+        if thread is not None and thread.ident is not None and thread is not threading.current_thread():
+            thread.join(timeout=0.75)
+
+    def release_session(self):
+        self.stop_connection_watch()
+        return super().release_session()
 
     def _get_resource_config(self):
         return deepcopy(self.snapshot["resource"])

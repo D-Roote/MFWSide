@@ -4,6 +4,7 @@ from pathlib import Path
 from queue import Queue
 import tempfile
 import threading
+from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -29,6 +30,19 @@ def connection(kind="Win32", value=42):
 
 
 class FakeQueue(Queue):
+    reader_done = True
+    error = ""
+
+    def __init__(self, _context=None):
+        super().__init__(maxsize=512)
+        self.sender = self
+
+    def start(self):
+        pass
+
+    def close_sender(self):
+        pass
+
     def close(self):
         self.closed = True
 
@@ -39,6 +53,12 @@ class FakeProcess:
         self.alive = False
         self.closed = False
         self.exitcode = 0
+        self.terminated = False
+
+    def terminate(self):
+        self.terminated = True
+        self.alive = False
+        self.exitcode = -15
 
     def start(self):
         self.alive = True
@@ -54,6 +74,7 @@ class FakeProcess:
 
 
 class FakeContext:
+    RawValue = staticmethod(lambda _type, value: SimpleNamespace(value=value))
     Lock = staticmethod(threading.Lock)
     Event = staticmethod(threading.Event)
     Queue = staticmethod(lambda maxsize: FakeQueue(maxsize))
@@ -66,7 +87,7 @@ class SessionManagerTests(unittest.TestCase):
         fixtures.UILifecycleTests.setUpClass()
 
     def setUp(self):
-        self.manager = SessionManager(context=FakeContext())
+        self.manager = SessionManager(context=FakeContext(), event_channel_factory=FakeQueue)
         self.addCleanup(self.manager.deleteLater)
         self.addCleanup(self.manager.timer.stop)
 
@@ -282,7 +303,8 @@ class SessionRuntimeTests(unittest.TestCase):
             runtime = self.runtime(data)
             with patch("app.sessionRuntime.AdbController") as factory:
                 self.assertTrue(runtime._create_controller()[0])
-                factory.assert_called_once_with(adb_path=adb.name, address="device", config={"value": 1},
+                factory.assert_called_once_with(adb_path=adb.name, address="device",
+                                                config={"value": 1, "command": {"KillServer": ["{ADB}", "version"]}},
                                                 input_methods=2, screencap_methods=3)
             self.assertIsNotNone(runtime._controller_sink_id)
 

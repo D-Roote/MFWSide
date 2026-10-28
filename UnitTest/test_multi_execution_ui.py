@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
 
 import test_runtime_lifecycle as fixtures
-from test_multi_execution import FakeContext, connection
+from test_multi_execution import FakeContext, FakeQueue, connection
 from PySide6.QtWidgets import QApplication, QFrame, QLabel
 from PySide6.QtTest import QTest
 from app.monitoring import ConnectionTarget
@@ -26,7 +26,7 @@ class MultiExecutionUITests(unittest.TestCase):
         self.window.runtime.interface_path = self.window.runtime.user_dir / "interface.json"
         self.panel = self.window.multi_panel
         self.panel.manager.context = FakeContext()
-        self.panel.manager.desktop_lock = self.panel.manager.context.Lock()
+        self.panel.manager.event_channel_factory = FakeQueue
         self.addCleanup(self.panel.manager.timer.stop)
         self.addCleanup(self.discard_processes)
         self.window.show()

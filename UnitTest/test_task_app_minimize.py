@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 import test_runtime_lifecycle as fixtures
-from test_multi_execution import FakeContext, connection
+from test_multi_execution import FakeContext, FakeQueue, connection
 from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QApplication, QLabel
 from app.settingsUI import DEFAULT_MAA_CONFIG, SettingsStore
@@ -39,7 +39,7 @@ class TaskAppMinimizeTests(unittest.TestCase):
         window.runtime.interface_path = window.runtime.user_dir / "interface.json"
         manager = window.multi_panel.manager
         manager.context = FakeContext()
-        manager.desktop_lock = manager.context.Lock()
+        manager.event_channel_factory = FakeQueue
         self.addCleanup(manager.timer.stop)
 
         def discard_fake_processes():

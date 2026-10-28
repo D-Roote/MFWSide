@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from queue import Empty, Full
 import threading
+import time
 from uuid import uuid4
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -14,6 +15,11 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from app.monitoring import MonitoringService, supported_presets
 from app.sessionRuntime import SessionRuntime, needs_desktop_lock, resolve_preset, serialize_target, target_identity
 from app.adbWindow import window_identity
+from app.sessionIPC import DesktopLease, SessionEventInbox, SharedFlag
+
+
+FAILED_SESSION_CLEANUP_SECONDS = 8.0
+EXIT_EVENT_DRAIN_SECONDS = 1.0
 
 
 ACTIVE_STATES = {"starting", "waiting", "running", "checking", "stopping"}
@@ -64,8 +70,8 @@ def session_process(snapshot, connection, mode, stop_event, events, desktop_lock
 
     def send(kind, value):
         try:
-            events.put((kind, value), timeout=2 if kind == "result" else 0)
-        except (Full, OSError, ValueError):
+            events.put((kind, value), timeout=2 if kind in ("result", "disconnected") else 0)
+        except (Full, EOFError, OSError, ValueError):
             pass  # A stalled GUI cannot accumulate an unbounded native log queue.
 
     try:
@@ -122,6 +128,7 @@ def session_process(snapshot, connection, mode, stop_event, events, desktop_lock
                 except (OSError, RuntimeError, ValueError) as error:
                     send("log", f"완료 후 앱 종료 대상 확인 실패: {error}")
             send("state", "running")
+            runtime.start_connection_watch(lambda message: send("disconnected", message))
             outcome["succeeded"], outcome["message"] = runtime.run_task(
                 snapshot["queue"], minimize_window=snapshot["minimize"], cancellation_requested=stop_event.is_set)
     except Exception as error:
@@ -131,6 +138,7 @@ def session_process(snapshot, connection, mode, stop_event, events, desktop_lock
         if stopper is not None:
             stopper.join(6)
         if runtime is not None:
+            runtime.stop_connection_watch()
             connection = getattr(runtime, "connection", {})
             if isinstance(connection, dict) and "emulator" in connection:
                 outcome["emulator"] = deepcopy(connection["emulator"])
@@ -147,8 +155,8 @@ def session_process(snapshot, connection, mode, stop_event, events, desktop_lock
             outcome["message"] += "\n작업이 중지되었습니다."
         outcome["message"] = "\n".join(dict.fromkeys(outcome["message"].splitlines()))
         send("result", outcome)
-        # A process exits before the GUI declares the session idle. The mutex
-        # is released only after both stop-thread and native lifecycle cleanup.
+        # DesktopLease.release is a no-op: the parent admits another session
+        # only after this process exits, including an abnormal native exit.
         if locked:
             desktop_lock.release()
 
@@ -167,6 +175,13 @@ class Session:
     remove_pending: bool = False
     logs: deque = field(default_factory=lambda: deque(maxlen=200))
     task_preset: str = ""
+    desktop_lease: object = None
+    needs_desktop: bool = False
+    failure_reason: str = ""
+    failure_deadline: float = 0.0
+    exited_at: float | None = None
+    termination_requested: bool = False
+    result_received_at: float | None = None
 
     @property
     def active(self):
@@ -179,10 +194,11 @@ class SessionManager(QObject):
     activity_changed = Signal()
     wave_finished = Signal(object, object)
 
-    def __init__(self, parent=None, context=None):
+    def __init__(self, parent=None, context=None, event_channel_factory=None):
         super().__init__(parent)
         self.context = context or mp.get_context("spawn")
-        self.desktop_lock = self.context.Lock()
+        self.event_channel_factory = event_channel_factory or SessionEventInbox
+        self.desktop_owner = None
         self.sessions = {}
         self.wave = None
         self.closing = False
@@ -264,23 +280,38 @@ class SessionManager(QObject):
         if mode == "run" and not request.get("queue"):
             raise ValueError("실행할 작업을 선택하거나 작업 프리셋을 확인하세요.")
         session.mode, session.result = mode, None
+        session.failure_reason = ""
+        session.failure_deadline = 0.0
+        session.exited_at = None
+        session.termination_requested = False
+        session.result_received_at = None
+        session.needs_desktop = needs_desktop_lock(resolve_preset(request, session.connection), request.get("minimize", False))
+        session.desktop_lease = DesktopLease(SharedFlag(self.context))
         session.logs.clear() if request.get("clear_log") else None
-        session.stop_event = self.context.Event()
-        session.events = self.context.Queue(maxsize=512)
+        session.stop_event = SharedFlag(self.context)
+        session.events = self.event_channel_factory(self.context)
         session.process = self.context.Process(
             target=session_process, args=(request, deepcopy(session.connection), mode, session.stop_event,
-                                         session.events, self.desktop_lock), daemon=False)
+                                         session.events.sender, session.desktop_lease), daemon=False)
         session.state = "checking" if mode == "check" else "starting"
         try:
             session.process.start()
+            session.events.close_sender()
+            session.events.start()
         except Exception as error:
-            session.process.close()
-            session.process = None
+            if session.process.is_alive():
+                self._fail_session(session, f"세션 통신을 시작하지 못했습니다: {error}")
+                self.timer.start()
+            else:
+                session.process.close()
+                session.process = None
+                session.state = "failed"
             session.events.close()
-            session.state = "failed"
             self.mark_wave_failure(session_id, error)
             self.changed.emit(session_id)
+            self.activity_changed.emit()
             raise
+        self._grant_desktop_access()
         if mode == "run":
             if self.wave is None:
                 self.wave = {"ids": set(), "results": [], "actions": deepcopy(request.get("after_actions", {}))}
@@ -310,6 +341,24 @@ class SessionManager(QObject):
             del self.sessions[session_id]
             self.changed.emit(session_id)
 
+    def _grant_desktop_access(self):
+        if self.desktop_owner is not None:
+            return
+        for session in self.sessions.values():
+            if session.active and session.needs_desktop and not session.stop_event.is_set():
+                self.desktop_owner = session.id
+                session.desktop_lease.ready.set()
+                return
+
+    def _fail_session(self, session, message):
+        if session.failure_reason:
+            return
+        session.failure_reason = str(message).strip() or "세션 연결 또는 통신 오류가 발생했습니다."
+        session.failure_deadline = time.monotonic() + FAILED_SESSION_CLEANUP_SECONDS
+        session.stop_event.set()
+        session.state = "stopping"
+        self.changed.emit(session.id)
+
     def poll(self):
         finished = False
         for session in list(self.sessions.values()):
@@ -321,20 +370,53 @@ class SessionManager(QObject):
                     kind, value = session.events.get_nowait()
                 except Empty:
                     break
+                except (EOFError, OSError, ValueError, TypeError) as error:
+                    self._fail_session(session, f"세션 통신을 읽지 못했습니다: {error}")
+                    break
                 if kind == "log":
                     session.logs.append(str(value))
                     self.log.emit(session.id, str(value))
-                elif kind == "state" and session.state != "stopping":
+                elif kind == "state" and isinstance(value, str) and value in ACTIVE_STATES and session.state != "stopping":
                     session.state = value
                     self.changed.emit(session.id)
                 elif kind == "result":
-                    session.result = value
+                    if isinstance(value, dict) and isinstance(value.get("succeeded"), bool) and isinstance(value.get("message"), str):
+                        session.result = value
+                        if session.result_received_at is None:
+                            session.result_received_at = time.monotonic()
+                        if not value["succeeded"] and not session.stop_event.is_set():
+                            self._fail_session(session, value["message"])
+                    else:
+                        self._fail_session(session, "세션 실행 결과의 형식이 올바르지 않습니다.")
+                elif kind == "disconnected" and session.state != "stopping":
+                    self._fail_session(session, value)
+            if session.events.error:
+                self._fail_session(session, session.events.error)
             if was_alive:
+                now = time.monotonic()
+                if (session.result_received_at is not None and not session.stop_event.is_set()
+                        and now - session.result_received_at >= FAILED_SESSION_CLEANUP_SECONDS):
+                    self._fail_session(session, "실행 결과 수신 후 세션 프로세스가 종료되지 않아 해당 인스턴스만 정리합니다.")
+                    session.failure_deadline = now  # The terminal-result cleanup grace has already elapsed.
+                if session.failure_reason and time.monotonic() >= session.failure_deadline and not session.termination_requested:
+                    try:
+                        session.process.terminate()  # Only this failed app-owned worker, never ADB/server/other sessions.
+                        session.termination_requested = True
+                    except (OSError, ValueError) as error:
+                        session.failure_reason += f"\n세션 프로세스 종료 요청 실패: {error}"
+                        session.failure_deadline = time.monotonic() + 1
                 continue
+            if session.exited_at is None:
+                session.exited_at = time.monotonic()
+            if (session.process.exitcode == 0 and session.result is None and not session.events.reader_done
+                    and time.monotonic() - session.exited_at < EXIT_EVENT_DRAIN_SECONDS):
+                continue  # Let its receiver finish; never block other sessions or the GUI.
             finished = True
             session.process.join(timeout=0)
-            cancelled = session.stop_event.is_set()
+            cancelled = session.stop_event.is_set() and not session.failure_reason
             result = session.result or {"succeeded": False, "message": "실행 프로세스가 결과 없이 종료되었습니다."}
+            if session.failure_reason:
+                result = {**result, "succeeded": False, "message": session.failure_reason}
             exit_code = session.process.exitcode
             if exit_code not in (None, 0):
                 result = {**result, "succeeded": False,
@@ -348,6 +430,8 @@ class SessionManager(QObject):
             session.process = None
             session.events.close()
             session.events = None
+            if self.desktop_owner == session.id:
+                self.desktop_owner = None
             if session.mode == "run" and self.wave is not None:
                 self.wave["results"].append({"id": session.id, "connection": deepcopy(session.connection), **result,
                                               "succeeded": bool(result["succeeded"] and not cancelled)})
@@ -356,6 +440,7 @@ class SessionManager(QObject):
             if session.remove_pending:
                 del self.sessions[session.id]
             self.changed.emit(session.id)
+        self._grant_desktop_access()
         if not self.active:
             self.timer.stop()
             if self.wave is not None:

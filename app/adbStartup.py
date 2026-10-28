@@ -8,6 +8,7 @@ from maa.toolkit import Toolkit
 from app.pg_init import parse_extra_arguments, parse_manual_program_command
 from app.programLaunch import is_shortcut, launch_shortcut
 from app.adbWindow import bind_runtime_window
+from app.adbPolicy import shared_adb_options
 
 
 ADB_POST_PROCESS_WAIT_SECONDS = 60.0
@@ -50,8 +51,8 @@ def adb_controller_options(connection):
         raise ValueError("ADB 실행 파일 경로를 확인하세요.")
     if device.get("adb_path") and Path(path) != Path(device["adb_path"]):
         device = {}
-    return {"adb_path": path, "address": address,
-            **{key: deepcopy(device[key]) for key in ("screencap_methods", "input_methods", "config") if key in device}}
+    return shared_adb_options({"adb_path": path, "address": address,
+            **{key: deepcopy(device[key]) for key in ("screencap_methods", "input_methods", "config") if key in device}})
 
 
 def adb_target_descriptor(connection):
