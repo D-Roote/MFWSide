@@ -1,5 +1,6 @@
 """Source/frozen path separation without launching apps, devices or SDK jobs."""
 import importlib
+import json
 import os
 from pathlib import Path
 import sys
@@ -19,13 +20,12 @@ INTERFACE = {"controller": [{"name": "Win", "type": "Win32", "win32": {"window_r
 
 
 class ApplicationPathTests(unittest.TestCase):
-    def test_source_layout_keeps_existing_resource_model_and_user_paths(self):
+    def test_source_layout_places_project_and_user_beside_entry_point(self):
         self.assertEqual(PATHS.root_dir, ROOT)
         self.assertEqual(PATHS.app_dir, ROOT / "app")
-        self.assertEqual(PATHS.resource_dir, ROOT / "assets/resources")
-        self.assertEqual(PATHS.resource_dir / "model", ROOT / "assets/resources/model")
-        self.assertEqual(PATHS.user_dir, ROOT / "assets/user")
-        self.assertEqual(PATHS.interface_path, ROOT / "assets/resources/interface.json")
+        self.assertEqual(PATHS.resource_dir, ROOT / "resource")
+        self.assertEqual(PATHS.user_dir, ROOT / "user")
+        self.assertEqual(PATHS.interface_path, ROOT / "interface.json")
 
     def test_ui_and_icons_move_with_package_not_with_project_resources(self):
         self.assertTrue((PATHS.ui_dir / "baseUI.ui").is_file())
@@ -49,8 +49,9 @@ class ApplicationPathTests(unittest.TestCase):
             for bundled in (folder / "install/_internal/app", folder / "temporary_bundle/app"):
                 paths = resolve_application_paths(bundled, frozen=True, executable=folder / "install/MAABA.exe")
                 self.assertEqual(paths.root_dir, folder / "install")
-                self.assertEqual(paths.user_dir, folder / "install/assets/user")
-                self.assertEqual(paths.resource_dir, folder / "install/assets/resources")
+                self.assertEqual(paths.user_dir, folder / "install/user")
+                self.assertEqual(paths.resource_dir, folder / "install/resource")
+                self.assertEqual(paths.interface_path, folder / "install/interface.json")
                 self.assertEqual(paths.ui_dir, bundled / "pySide6")
                 self.assertEqual(paths.ui_resource_dir, bundled / "resources")
 
@@ -69,10 +70,28 @@ class ApplicationPathTests(unittest.TestCase):
                     patch("app.runtime.create_user32", return_value=MagicMock()), \
                     patch("app.runtime.Resource") as resource:
                 runtime = AppRuntime()
-            self.assertEqual(runtime.base_dir, paths.assets_dir)
+            self.assertEqual(runtime.base_dir, paths.root_dir)
             self.assertEqual(runtime.interface_path, paths.interface_path)
             self.assertEqual(runtime.user_dir, paths.user_dir)
             resource.assert_not_called()
+
+    def test_root_interface_is_read_instead_of_a_stale_assets_copy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = ApplicationPaths(Path(directory), ROOT / "app")
+            paths.interface_path.write_text(json.dumps(INTERFACE), encoding="utf-8")
+            stale = paths.root_dir / "assets/resources/interface.json"
+            stale.parent.mkdir(parents=True)
+            stale.write_text("not valid JSON", encoding="utf-8")
+            with patch("app.runtime.PATHS", paths), \
+                    patch("app.runtime.create_user32", return_value=MagicMock()):
+                runtime = AppRuntime()
+            self.assertEqual(runtime.interface, INTERFACE)
+            self.assertFalse(runtime.interface_missing)
+            paths.interface_path.unlink()
+            with patch("app.runtime.PATHS", paths), \
+                    patch("app.runtime.create_user32", return_value=MagicMock()):
+                runtime = AppRuntime()
+            self.assertTrue(runtime.interface_missing)
 
     def test_resource_bundle_paths_remain_relative_to_interface_not_code_or_cwd(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -81,8 +100,7 @@ class ApplicationPathTests(unittest.TestCase):
                     patch.object(AppRuntime, "_load_interface", return_value=INTERFACE), \
                     patch("app.runtime.create_user32", return_value=MagicMock()):
                 runtime = AppRuntime()
-            runtime.interface_path = paths.resource_dir / "nested/interface.json"
-            runtime.resource_config = {"path": ["../base", "overlays/selected"]}
+            runtime.resource_config = {"path": ["custom_bundle/base", "overlays/selected"]}
             with patch("app.runtime.Resource") as resource:
                 resource.return_value.loaded = True
                 resource.return_value.post_bundle.return_value.wait.return_value.succeeded = True

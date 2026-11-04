@@ -10,20 +10,17 @@ class ApplicationPaths:
     app_dir: Path
 
     @property
-    def assets_dir(self):
-        return self.root_dir / "assets"
-
-    @property
     def resource_dir(self):
-        return self.assets_dir / "resources"
+        # Conventional diagnostics location; actual bundles come from resource[].path.
+        return self.root_dir / "resource"
 
     @property
     def user_dir(self):
-        return self.assets_dir / "user"
+        return self.root_dir / "user"
 
     @property
     def interface_path(self):
-        return self.resource_dir / "interface.json"
+        return self.root_dir / "interface.json"
 
     @property
     def ui_dir(self):

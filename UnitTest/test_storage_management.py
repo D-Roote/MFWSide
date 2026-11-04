@@ -20,9 +20,9 @@ class StorageManagementTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
-        self.user = self.root / "assets/user"
+        self.user = self.root / "user"
         self.user.mkdir(parents=True)
-        self.groups = storage_groups(self.user, self.root, self.root / "app", self.root / "assets/resources")
+        self.groups = storage_groups(self.user, self.root, self.root / "app", self.root / "resource")
 
     def put(self, name, data=b"1234567890"):
         path = self.root / name
@@ -34,8 +34,8 @@ class StorageManagementTests(unittest.TestCase):
         return scan_storage(self.groups, self.user)
 
     def test_task_traces_error_images_and_python_bytecode_are_counted(self):
-        for name in ("assets/user/debug/maafw.log", "assets/user/debug/maafw.bak.old.log",
-                     "assets/user/debug/error/shot.png", "app/__pycache__/main.cpython-310.pyc"):
+        for name in ("user/debug/maafw.log", "user/debug/maafw.bak.old.log",
+                     "user/debug/error/shot.png", "app/__pycache__/main.cpython-310.pyc"):
             self.put(name)
         usage = {entry.group.key: entry for entry in self.scan()}
         self.assertEqual(usage["debug"].bytes, 30)
@@ -45,7 +45,7 @@ class StorageManagementTests(unittest.TestCase):
     def test_content_labels_describe_the_record_not_its_folder_name(self):
         directory = self.user / "arbitrary-name"
         directory.mkdir()
-        groups = storage_groups(self.user, self.root, self.root / "app", self.root / "assets/resources")
+        groups = storage_groups(self.user, self.root, self.root / "app", self.root / "resource")
         labels = {group.key: group.label for group in groups}
         self.assertEqual(labels["app_cache"], "Python 캐시")
         self.assertEqual(labels["resource_debug"], "작업 로그")
@@ -55,20 +55,20 @@ class StorageManagementTests(unittest.TestCase):
 
     def test_development_cache_is_neither_inventoried_nor_deleted(self):
         protected = [self.put(name) for name in (".cache/test_diagnostics/python_fault_1.log", ".cache/suite.log",
-                     "assets/user/.cache/debug/keep.log", "app/.cache/__pycache__/keep.pyc",
-                     "assets/user/debug/.cache/keep.log")]
-        groups = storage_groups(self.user, self.root, self.root / "app", self.root / "assets/resources")
+                     "user/.cache/debug/keep.log", "app/.cache/__pycache__/keep.pyc",
+                     "user/debug/.cache/keep.log")]
+        groups = storage_groups(self.user, self.root, self.root / "app", self.root / "resource")
         self.assertFalse(any(group.key in {"test_logs", "dev_logs", "user_.cache"} for group in groups))
         self.assertEqual(sum(usage.bytes for usage in scan_storage(groups, self.user)), 0)
         self.assertEqual(cleanup_storage(scan_storage(groups, self.user), self.user).files, 0)
         self.assertTrue(all(path.exists() for path in protected))
 
     def test_resource_model_accounts_config_and_source_are_not_removed(self):
-        protected = [self.put(name) for name in ("assets/resources/image/test.png", "assets/resources/model/ocr.bin",
-                     "assets/saved/account.json", "assets/user/config/user_config.json", "app/main.py",
+        protected = [self.put(name) for name in ("resource/image/test.png", "resource/model/ocr.bin",
+                     "saved/account.json", "user/config/user_config.json", "app/main.py",
                      ".cache/MaaReroll/debug/example.log", ".git/test.log", ".venv/test.log")]
-        log = self.put("assets/user/sessions/instance/run/debug/maafw.log")
-        config = self.put("assets/user/sessions/instance/run/config/maa_option.json")
+        log = self.put("user/sessions/instance/run/debug/maafw.log")
+        config = self.put("user/sessions/instance/run/config/maa_option.json")
         report = cleanup_storage(self.scan(), self.user)
         self.assertEqual(report.files, 1)
         self.assertFalse(log.exists())
@@ -76,23 +76,23 @@ class StorageManagementTests(unittest.TestCase):
         self.assertTrue(all(path.exists() for path in protected))
 
     def test_active_run_and_discovery_are_preserved(self):
-        live = self.put(f"assets/user/sessions/live/run/python_fault_{os.getpid()}.log")
-        log = self.put("assets/user/sessions/live/run/debug/maafw.log")
-        discovery = self.put("assets/user/sessions/discovery/debug/maafw.log")
+        live = self.put(f"user/sessions/live/run/python_fault_{os.getpid()}.log")
+        log = self.put("user/sessions/live/run/debug/maafw.log")
+        discovery = self.put("user/sessions/discovery/debug/maafw.log")
         report = cleanup_storage(self.scan(), self.user)
         self.assertEqual(report.files, 0)
         self.assertTrue(live.exists() and log.exists() and discovery.exists())
 
     def test_inactive_pid_run_can_be_cleaned(self):
-        marker = self.put("assets/user/sessions/old/run/python_fault_12345.log")
-        self.put("assets/user/sessions/old/run/debug/maafw.log")
+        marker = self.put("user/sessions/old/run/python_fault_12345.log")
+        self.put("user/sessions/old/run/debug/maafw.log")
         with patch("app.storageManagement.process_active", return_value=False):
             report = cleanup_storage(self.scan(), self.user)
         self.assertEqual(report.files, 2)
         self.assertFalse(marker.exists())
 
     def test_log_updated_after_scan_is_not_deleted(self):
-        path = self.put("assets/user/debug/old.log")
+        path = self.put("user/debug/old.log")
         usages = self.scan()
         future = time.time() + 3
         os.utime(path, (future, future))
@@ -113,7 +113,7 @@ class StorageManagementTests(unittest.TestCase):
         self.assertTrue(link.is_symlink())
 
     def test_reparse_directory_is_skipped_without_following(self):
-        path = self.put("assets/user/debug/junction/keep.log")
+        path = self.put("user/debug/junction/keep.log")
         original = Path.lstat
         def lstat(candidate):
             if candidate == path.parent:
@@ -126,7 +126,7 @@ class StorageManagementTests(unittest.TestCase):
 
     def test_reset_rolls_back_completed_writes_on_failure(self):
         from app.settingsUI import SettingsStore
-        path = self.put("assets/user/config/maa_config.json", b'{"custom": true}')
+        path = self.put("user/config/maa_config.json", b'{"custom": true}')
         original = SettingsStore._write_json
         def write(target, value):
             if target.name == "user_config.json":
@@ -143,9 +143,9 @@ class StorageManagementTests(unittest.TestCase):
         self.assertEqual(format_size(1024 ** 3), "1.0 GiB")
 
     def test_reset_only_application_config_files(self):
-        saved = self.put("assets/saved/account.json")
-        resource = self.put("assets/resources/interface.json")
-        self.put("assets/user/config/user_config.json", b'{"tasks": ["custom"]}')
+        saved = self.put("saved/account.json")
+        resource = self.put("interface.json")
+        self.put("user/config/user_config.json", b'{"tasks": ["custom"]}')
         reset_settings_files(self.user, DEFAULT_MAA_CONFIG)
         config = self.user / "config"
         self.assertEqual(json.loads((config / "user_config.json").read_text()), {})
@@ -153,7 +153,7 @@ class StorageManagementTests(unittest.TestCase):
         self.assertTrue(saved.exists() and resource.exists())
 
     def test_permission_failure_is_reported_not_silenced(self):
-        path = self.put("assets/user/debug/old.log")
+        path = self.put("user/debug/old.log")
         usages = self.scan()
         with patch.object(Path, "unlink", side_effect=PermissionError("locked")):
             report = cleanup_storage(usages, self.user)

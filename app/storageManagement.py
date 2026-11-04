@@ -61,7 +61,7 @@ def storage_groups(user_dir, root_dir, app_dir, resource_dir):
                StorageGroup("legacy_logs", "실행 로그", root, root / "logs", "logs"),
                StorageGroup("app_cache", "Python 캐시", app, app, "cache"),
                StorageGroup("root_cache", "시작 프로그램 캐시", root, root / "__pycache__", "bytecode"),
-               StorageGroup("agent_cache", "에이전트 캐시", root, root / "assets" / "agent", "cache"),
+               StorageGroup("agent_cache", "에이전트 캐시", root, root / "agent", "cache"),
                StorageGroup("resource_agent_cache", "리소스 에이전트 캐시", resources, resources / "agent", "cache")]
     return groups
 

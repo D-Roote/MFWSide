@@ -47,7 +47,8 @@ def inspect_bundle(directory):
     missing = [path for path in required if not (directory / path).is_file()]
     if missing:
         raise RuntimeError(f'Missing bundle files: {missing}')
-    if (directory / 'assets').exists():
+    allowed = {'mfwside.exe', '_internal', 'licenses', 'readme.md', 'build-info.json'}
+    if any(path.name.casefold() not in allowed for path in directory.iterdir()):
         raise RuntimeError('External resources or user data must not be in a release bundle')
     agents = directory / '_internal' / 'MaaAgentBinary'
     for name in ('maatouch', 'minicap', 'minitouch'):
@@ -138,7 +139,7 @@ def verify_gui(directory):
             time.sleep(0.05)
         if main_window is None:
             raise RuntimeError(f'Frozen GUI did not initialize: exit={process.poll()}')
-        config_path = directory / 'assets/user/config/maa_config.json'
+        config_path = directory / 'user/config/maa_config.json'
         if not config_path.is_file():
             raise RuntimeError('User data was not created beside the EXE')
         config = json.loads(config_path.read_text(encoding='utf-8'))

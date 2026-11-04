@@ -20,6 +20,15 @@ RUNTIME_PACKAGES = (
     'shiboken6', 'numpy', 'StrEnum', 'tomli',
 )
 RESOURCE_ONLY_FILES = frozenset({'start-anreroll.cmd', 'license.mareroll', 'license.maareroll'})
+APP_BUNDLE_ENTRIES = frozenset({'mfwside.exe', '_internal', 'licenses', 'readme.md', 'build-info.json'})
+
+
+def external_bundle_entries(directory):
+    directory = Path(directory)
+    if not directory.exists():
+        return []
+    return sorted(path.name for path in directory.iterdir()
+                  if path.name.casefold() not in APP_BUNDLE_ENTRIES)
 
 
 def read_version(path=None):
@@ -40,6 +49,9 @@ def bundle_files(directory):
             raise ValueError(f'Non-release data in bundle: {path.relative_to(directory)}')
         if path.name.casefold() in RESOURCE_ONLY_FILES:
             raise ValueError(f'Resource-only file in app bundle: {path.relative_to(directory)}')
+    unexpected = external_bundle_entries(directory)
+    if unexpected:
+        raise ValueError(f'Non-release data in bundle: {unexpected}')
     return files
 
 
@@ -90,8 +102,9 @@ def main(argv=None):
     if sys.platform != 'win32' or struct.calcsize('P') != 8 or sys.version_info[:2] != (3, 10):
         parser.error('Build with CPython 3.10 x64 on Windows')
     output = ROOT / 'dist' / 'MFWSide'
-    if (output / 'assets').exists():
-        raise RuntimeError('Output has external assets/user data; move it to a backup before rebuilding')
+    unexpected = external_bundle_entries(output)
+    if unexpected:
+        raise RuntimeError(f'Output has external project/user data: {unexpected}; use a clean build directory')
     app_version = read_version()
     if not args.skip_tests:
         subprocess.run([sys.executable, 'UnitTest/run_tests.py', '-q'], cwd=ROOT, check=True, timeout=1800)

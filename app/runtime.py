@@ -165,8 +165,8 @@ def create_user32():
 
 class AppRuntime:
     def __init__(self):
-        # Preserve resources, OCR models and user config at their existing paths.
-        self.base_dir = PATHS.assets_dir
+        # External project metadata and user data live beside the entry point.
+        self.base_dir = PATHS.root_dir
         self.resource_dir = PATHS.resource_dir
         self.user_dir = PATHS.user_dir
         self.interface_path = PATHS.interface_path

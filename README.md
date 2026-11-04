@@ -15,12 +15,14 @@ MaaFramework와 PySide6 기반의 Windows용 MAA Framework 범용 실행 앱입�
 ## 사용 방법
 
 1. Windows x64용 배포 폴더 전체를 쓰기 가능한 경로에 압축 해제합니다. `MFWSide.exe`와 `_internal/`은 함께 유지합니다.
-2. 별도 리소스 패키지를 `assets/resources/`에 설치합니다. `interface.json`과 파이프라인·이미지·모델·Agent의 상대 경로를 유지합니다.
+2. `interface.json`을 `MFWSide.exe` 옆에 설치합니다. 리소스와 Agent는 `interface.json`에 선언한 경로에 둡니다. 일반적인 구조는 `resource/`, `agent/`, `user/`, `interface.json`, `MFWSide.exe`입니다.
 3. `MFWSide.exe`를 실행하고 연결 대상과 작업을 선택한 뒤 시작합니다.
 
 배포 앱에는 Python이 포함되지만 게임별 리소스는 포함되지 않습니다. **Python Agent를 사용하는 리소스는 별도 Python 실행 환경과 해당 Agent의 의존성이 필요합니다.**
 
-사용자 설정과 세션 로그는 `assets/user/`에 저장됩니다. 앱이나 리소스를 교체할 때 이 폴더를 유지해야 사용자 설정이 유지됩니다.
+사용자 설정과 세션 로그는 EXE 옆의 `user/`에 저장됩니다. 앱이나 리소스를 교체할 때 이 폴더를 유지해야 사용자 설정이 유지됩니다.
+
+기존 `assets` 구조에서 전환할 때는 앱을 종료한 상태에서 `assets/user/`를 최상위 `user/`로 옮기고, `interface.json`의 위치가 바뀐 만큼 `resource[].path`와 Agent 실행 경로를 조정하세요. 예를 들어 기존 리소스의 `path: ["."]`는 `resource/`로 옮겼다면 `["resource"]`로 바꿉니다. 앱이 기존 파일을 자동 이동하거나 새·이전 설정을 병합하지는 않습니다.
 
 `interface.json`이 없으면 기본 이름 `MFWSide`로 열리며 작업 실행은 비활성화됩니다.  
 `interface.json`의 모든 기능을 지원하는 것은 아니므로 앱·MaaFramework와 리소스의 호환성을 확인하세요.

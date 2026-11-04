@@ -35,23 +35,23 @@ class ExitCleanupTests(unittest.TestCase):
 
     def test_closed_app_logs_discovery_and_all_supported_bytecode_are_removed(self):
         disposable = [self.put(name) for name in (
-            "assets/user/debug/maafw.log", "assets/user/debug/python_fault_12345.log",
-            "assets/user/debug/error/shot.png", "assets/user/archive/history.log",
-            "assets/user/sessions/old/run/debug/maafw.log",
-            "assets/user/sessions/old/run/python_fault_12345.log",
-            "assets/user/sessions/discovery/debug/maafw.log",
-            "assets/resources/debug/maafw.log", "debug/old.dmp", "logs/history.log",
+            "user/debug/maafw.log", "user/debug/python_fault_12345.log",
+            "user/debug/error/shot.png", "user/archive/history.log",
+            "user/sessions/old/run/debug/maafw.log",
+            "user/sessions/old/run/python_fault_12345.log",
+            "user/sessions/discovery/debug/maafw.log",
+            "resource/debug/maafw.log", "debug/old.dmp", "logs/history.log",
             "app/__pycache__/widget.cpython-310.pyc", "__pycache__/main.cpython-310.pyc",
-            "assets/agent/__pycache__/main.cpython-310.pyc",
-            "assets/resources/agent/__pycache__/action.cpython-310.pyc",
+            "agent/__pycache__/main.cpython-310.pyc",
+            "resource/agent/__pycache__/action.cpython-310.pyc",
         )]
         protected = [self.put(name) for name in (
-            "assets/user/config/maa_config.json", "assets/user/config/user_config.json",
-            "assets/user/sessions/old/run/config.json", "assets/resources/interface.json",
-            "assets/resources/pipeline/main.json", "assets/resources/image/template.png",
-            "assets/resources/model/model.onnx", "assets/saved/account.json",
-            "app/source.py", "assets/agent/action.py", "assets/resources/agent/action.py",
-            ".cache/developer.log", "assets/user/.cache/keep.log",
+            "user/config/maa_config.json", "user/config/user_config.json",
+            "user/sessions/old/run/config.json", "interface.json",
+            "resource/pipeline/main.json", "resource/image/template.png",
+            "resource/model/model.onnx", "saved/account.json",
+            "app/source.py", "agent/action.py", "resource/agent/action.py",
+            ".cache/developer.log", "user/.cache/keep.log",
             "app/.cache/__pycache__/keep.pyc", ".venv/__pycache__/keep.pyc",
         )]
         with patch("app.exitCleanup.process_active", return_value=False), \
@@ -63,8 +63,8 @@ class ExitCleanupTests(unittest.TestCase):
         self.assertTrue(all(path.exists() for path in protected))
 
     def test_another_live_client_defers_shared_cleanup(self):
-        marker = self.put("assets/user/debug/python_fault_12345.log")
-        log = self.put("assets/user/debug/maafw.log")
+        marker = self.put("user/debug/python_fault_12345.log")
+        log = self.put("user/debug/maafw.log")
         cache = self.put("app/__pycache__/widget.pyc")
         with patch("app.exitCleanup.process_active", return_value=True):
             result = cleanup_generated_files(self.paths)
@@ -73,9 +73,9 @@ class ExitCleanupTests(unittest.TestCase):
         self.assertTrue(marker.exists() and log.exists() and cache.exists())
 
     def test_running_session_remains_protected_after_the_gui_exits(self):
-        marker = self.put(f"assets/user/sessions/live/run/python_fault_{os.getpid()}.log")
-        live = self.put("assets/user/sessions/live/run/debug/maafw.log")
-        old = self.put("assets/user/sessions/old/run/debug/maafw.log")
+        marker = self.put(f"user/sessions/live/run/python_fault_{os.getpid()}.log")
+        live = self.put("user/sessions/live/run/debug/maafw.log")
+        old = self.put("user/sessions/old/run/debug/maafw.log")
         result = cleanup_generated_files(self.paths)
         self.assertTrue(marker.exists() and live.exists())
         self.assertFalse(old.exists())
@@ -163,14 +163,14 @@ class ExitCleanupTests(unittest.TestCase):
             target = self.root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
-        log = self.put("assets/user/debug/maafw.log")
+        log = self.put("user/debug/maafw.log")
         cache = self.put("app/__pycache__/unused.pyc")
-        config = self.put("assets/user/config/maa_config.json")
+        config = self.put("user/config/maa_config.json")
         code = (
             "from pathlib import Path; import time; "
             "from app.exitCleanup import schedule_exit_cleanup; "
             "schedule_exit_cleanup(); time.sleep(0.2); "
-            "assert Path('assets/user/debug/maafw.log').is_file()"
+            "assert Path('user/debug/maafw.log').is_file()"
         )
         result = subprocess.run(
             [getattr(sys, "_base_executable", sys.executable), "-B", "-c", code],

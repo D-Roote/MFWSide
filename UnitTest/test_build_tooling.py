@@ -89,7 +89,7 @@ class WindowsBuildToolingTests(unittest.TestCase):
         self.assertFalse(any(name.casefold() in build_windows.RESOURCE_ONLY_FILES for name in names))
 
     def test_archive_refuses_to_package_user_settings(self):
-        settings = self.bundle / 'assets/user/config'
+        settings = self.bundle / 'user/config'
         settings.mkdir(parents=True)
         (settings / 'user_config.json').write_text('{}', encoding='utf-8')
         destination = self.root / 'unsafe.zip'
@@ -135,16 +135,26 @@ class WindowsBuildToolingTests(unittest.TestCase):
         self.assertTrue(verify_windows_build.verify_session_ipc(mp.get_context('spawn')))
 
     def test_build_guard_preserves_existing_output_user_data(self):
-        assets = self.root / 'dist/MFWSide/assets/user'
-        assets.mkdir(parents=True)
-        sentinel = assets / 'settings.json'
-        sentinel.write_text('keep', encoding='utf-8')
-        with patch.object(build_windows, 'ROOT', self.root), \
-                patch.object(build_windows.subprocess, 'run') as run:
-            with self.assertRaisesRegex(RuntimeError, 'external assets/user data'):
-                build_windows.main(['--skip-tests'])
-        self.assertEqual(sentinel.read_text(encoding='utf-8'), 'keep')
-        run.assert_not_called()
+        output = self.root / 'dist/MFWSide'
+        output.mkdir(parents=True)
+        for name in ('user', 'assets', 'resource', 'agent', 'custom_bundle', 'interface.json'):
+            with self.subTest(name=name):
+                target = output / name
+                if name == 'interface.json':
+                    sentinel = target
+                else:
+                    target.mkdir()
+                    sentinel = target / 'keep.txt'
+                sentinel.write_text('keep', encoding='utf-8')
+                with patch.object(build_windows, 'ROOT', self.root), \
+                        patch.object(build_windows.subprocess, 'run') as run:
+                    with self.assertRaisesRegex(RuntimeError, 'external project/user data'):
+                        build_windows.main(['--skip-tests'])
+                self.assertEqual(sentinel.read_text(encoding='utf-8'), 'keep')
+                run.assert_not_called()
+                sentinel.unlink()
+                if target.is_dir():
+                    target.rmdir()
 
     def test_notice_collection_stays_inside_its_destination(self):
         destination = self.root / 'licenses'
