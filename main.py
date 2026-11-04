@@ -34,6 +34,8 @@ def main() -> int:
     from PySide6.QtCore import QTimer
     from app.winUI import MainWindow
     app = QApplication(sys.argv)
+    from app.appIcon import apply_application_icon
+    apply_application_icon(app)
 
     try:
         window = MainWindow()
