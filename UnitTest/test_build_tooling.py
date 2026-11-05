@@ -3,6 +3,7 @@ from pathlib import Path
 from copy import deepcopy
 import multiprocessing as mp
 import os
+import runpy
 import sys
 import tempfile
 import unittest
@@ -17,6 +18,11 @@ from tools import build_windows, verify_windows_build
 class WindowsBuildToolingTests(unittest.TestCase):
     def test_build_and_verification_share_the_same_bundle_contract(self):
         self.assertIs(build_windows.APP_BUNDLE_ENTRIES, verify_windows_build.APP_BUNDLE_ENTRIES)
+
+    def test_spec_can_read_version_via_run_path_without_tools_on_sys_path(self):
+        namespace = runpy.run_path(str(Path(build_windows.__file__)))
+        self.assertEqual(namespace['read_version'](), build_windows.read_version())
+        self.assertEqual(namespace['APP_BUNDLE_ENTRIES'], build_windows.APP_BUNDLE_ENTRIES)
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()

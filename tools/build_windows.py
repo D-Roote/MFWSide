@@ -16,7 +16,9 @@ import zipfile
 if __package__:
     from .bundle_layout import APP_BUNDLE_ENTRIES
 else:
-    from bundle_layout import APP_BUNDLE_ENTRIES
+    # PyInstaller's spec uses run_path without adding tools/ to sys.path.
+    import runpy
+    APP_BUNDLE_ENTRIES = runpy.run_path(str(Path(__file__).with_name('bundle_layout.py')))['APP_BUNDLE_ENTRIES']
 
 
 ROOT = Path(__file__).resolve().parents[1]
