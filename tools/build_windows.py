@@ -100,6 +100,20 @@ def copy_notices(destination):
     shutil.copy2(python_notice, destination / 'Python-LICENSE.txt')
 
 
+def build_environment(environ=None):
+    # Dependency analysis must not collect same-named DLLs from unrelated apps.
+    original = os.environ if environ is None else environ
+    result = {key: value for key, value in original.items()
+              if not key.upper().startswith(('PYTHON', 'QT', 'MAAFW_', '_PYI_', 'PYINSTALLER_'))
+              and key.upper() not in {'PATH', 'VIRTUAL_ENV'}}
+    windows = Path(original.get('SystemRoot', r'C:\Windows'))
+    result['PATH'] = os.pathsep.join(dict.fromkeys(str(path) for path in (
+        Path(sys.executable).parent, Path(sys.base_prefix),
+        windows / 'System32', windows,
+    )))
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--skip-tests', action='store_true', help='Use only after a separate full regression run')
@@ -114,7 +128,7 @@ def main(argv=None):
     app_version = read_version()
     if not args.skip_tests:
         subprocess.run([sys.executable, 'UnitTest/run_tests.py', '-q'], cwd=ROOT, check=True, timeout=1800)
-    build_env = dict(os.environ)
+    build_env = build_environment()
     build_env['MFWSIDE_BUILD_CONSOLE'] = '1' if args.console else '0'
     subprocess.run([
         sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',

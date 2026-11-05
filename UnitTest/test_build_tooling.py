@@ -120,6 +120,21 @@ class WindowsBuildToolingTests(unittest.TestCase):
         self.assertEqual(original['PYTHONPATH'], 'private')
         self.assertEqual(result['PYINSTALLER_RESET_ENVIRONMENT'], '1')
 
+    def test_build_environment_excludes_foreign_dll_search_paths(self):
+        original = {'SystemRoot': 'C:/Windows', 'Path': 'C:/foreign/bin',
+                    'PYTHONPATH': 'private', 'QT_PLUGIN_PATH': 'external',
+                    'MAAFW_BINARY_PATH': 'external', 'VIRTUAL_ENV': 'private',
+                    '_PYI_APPLICATION_HOME_DIR': 'old', 'KEEP_ME': 'yes'}
+        result = build_windows.build_environment(original)
+        self.assertEqual(result['KEEP_ME'], 'yes')
+        self.assertNotIn('foreign', result['PATH'])
+        self.assertIn(str(Path(sys.executable).parent), result['PATH'])
+        self.assertIn(str(Path('C:/Windows') / 'System32'), result['PATH'])
+        for key in ('Path', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'MAAFW_BINARY_PATH',
+                    'VIRTUAL_ENV', '_PYI_APPLICATION_HOME_DIR'):
+            self.assertNotIn(key, result)
+        self.assertEqual(original['Path'], 'C:/foreign/bin')
+
     def test_native_manifest_refuses_an_incomplete_bundle(self):
         with self.assertRaisesRegex(RuntimeError, 'Missing bundle files'):
             verify_windows_build.inspect_bundle(self.bundle)
