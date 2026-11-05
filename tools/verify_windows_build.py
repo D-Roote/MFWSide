@@ -13,6 +13,11 @@ import sys
 import tempfile
 import time
 
+if __package__:
+    from .bundle_layout import APP_BUNDLE_ENTRIES
+else:
+    from bundle_layout import APP_BUNDLE_ENTRIES
+
 if sys.platform == 'win32':
     # Import before the harness temporarily adopts a frozen executable identity.
     from multiprocessing import popen_spawn_win32
@@ -47,8 +52,7 @@ def inspect_bundle(directory):
     missing = [path for path in required if not (directory / path).is_file()]
     if missing:
         raise RuntimeError(f'Missing bundle files: {missing}')
-    allowed = {'mfwside.exe', '_internal', 'licenses', 'readme.md', 'build-info.json'}
-    if any(path.name.casefold() not in allowed for path in directory.iterdir()):
+    if any(path.name.casefold() not in APP_BUNDLE_ENTRIES for path in directory.iterdir()):
         raise RuntimeError('External resources or user data must not be in a release bundle')
     agents = directory / '_internal' / 'MaaAgentBinary'
     for name in ('maatouch', 'minicap', 'minitouch'):
@@ -176,7 +180,7 @@ def verify_session_ipc(context):
 
         inbox = SessionEventInbox(context)
         expected = ('result', {'succeeded': True, 'message': 'frozen-session-pipe-ok'})
-        sender = context.Process(target=inbox.sender.put, args=(expected,))
+        sender = context.Process(target=inbox.sender.put_and_flush, args=(expected,))
         processes.append(sender)
         sender.start()
         inbox.close_sender()

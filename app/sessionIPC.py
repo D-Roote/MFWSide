@@ -81,6 +81,11 @@ class SessionEventSender:
             if self._error is not None:
                 raise OSError("세션 메시지를 전송하지 못했습니다.") from self._error
 
+    def put_and_flush(self, value, timeout=2):
+        """Process-entry helper: finish delivery before the caller exits."""
+        self.put(value)
+        self.flush(timeout)
+
     def close(self):
         with self._condition:
             self._closing = True

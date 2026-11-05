@@ -13,6 +13,11 @@ import sys
 import os
 import zipfile
 
+if __package__:
+    from .bundle_layout import APP_BUNDLE_ENTRIES
+else:
+    from bundle_layout import APP_BUNDLE_ENTRIES
+
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_PACKAGES = (
@@ -20,7 +25,6 @@ RUNTIME_PACKAGES = (
     'shiboken6', 'numpy', 'StrEnum', 'tomli',
 )
 RESOURCE_ONLY_FILES = frozenset({'start-anreroll.cmd', 'license.mareroll', 'license.maareroll'})
-APP_BUNDLE_ENTRIES = frozenset({'mfwside.exe', '_internal', 'licenses', 'readme.md', 'build-info.json'})
 
 
 def external_bundle_entries(directory):

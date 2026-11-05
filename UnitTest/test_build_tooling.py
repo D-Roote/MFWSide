@@ -15,6 +15,9 @@ from tools import build_windows, verify_windows_build
 
 
 class WindowsBuildToolingTests(unittest.TestCase):
+    def test_build_and_verification_share_the_same_bundle_contract(self):
+        self.assertIs(build_windows.APP_BUNDLE_ENTRIES, verify_windows_build.APP_BUNDLE_ENTRIES)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
