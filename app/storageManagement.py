@@ -65,7 +65,7 @@ def storage_groups(user_dir, root_dir, app_dir, resource_dir):
                StorageGroup("root_cache", "시작 프로그램 캐시", root, root / "__pycache__", "bytecode"),
                StorageGroup("agent_cache", "에이전트 캐시", root, root / "agent", "cache"),
                StorageGroup("resource_agent_cache", "리소스 에이전트 캐시", resources, resources / "agent", "cache")]
-    groups.extend(_declared_storage_groups(root))
+    groups.extend(_declared_storage_groups(root, user))
     unique = []
     for group in groups:
         # Same-kind ancestors already cover nested caches/logs. Keep different
@@ -78,7 +78,7 @@ def storage_groups(user_dir, root_dir, app_dir, resource_dir):
     return unique
 
 
-def _declared_storage_groups(root):
+def _declared_storage_groups(root, user):
     """Only generated data within this project; never follow interpreter paths."""
     try:
         interface_path = root / "interface.json"
@@ -97,7 +97,12 @@ def _declared_storage_groups(root):
         group = StorageGroup(key, label, root, candidate, kind)
         try:
             relative = candidate.relative_to(root)
+            if candidate.is_relative_to(user):
+                return  # Preserve the existing live-session protection policy.
             if any(part.casefold() in {"..", ".cache", ".git", ".venv", "venv"} for part in relative.parts):
+                return
+            if any((folder / "pyvenv.cfg").exists() for folder in (candidate, *candidate.parents)
+                   if folder.is_relative_to(root)):
                 return
             if _safe_path(group, candidate):
                 result.append(group)

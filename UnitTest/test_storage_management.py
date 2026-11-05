@@ -55,9 +55,11 @@ class StorageManagementTests(unittest.TestCase):
         self.assertTrue(all(path.exists() for path in protected))
 
     def test_external_and_development_paths_are_not_added(self):
+        self.put("custom_python/pyvenv.cfg")
         self.put("interface.json", json.dumps({
-            "resource": [{"path": ["../outside", ".cache/project", ".venv/package"]}],
-            "agent": {"child_exec": "python", "child_args": ["../agent/main.py"]}
+            "resource": [{"path": ["../outside", ".cache/project", ".venv/package", "user/sessions/live/run"]}],
+            "agent": [{"child_exec": "python", "child_args": ["../agent/main.py"]},
+                      {"child_exec": "python", "child_args": ["custom_python/scripts/main.py"]}]
         }).encode())
         groups = storage_groups(self.user, self.root, self.root / "app", self.root / "resource")
         self.assertFalse(any(item.key.startswith("declared_") for item in groups))
