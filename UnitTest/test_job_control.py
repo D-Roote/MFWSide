@@ -7,6 +7,11 @@ from app.jobControl import wait_job
 
 
 class JobControlTests(unittest.TestCase):
+    def test_rejected_post_does_not_wait_for_impossible_completion(self):
+        job = MagicMock(done=False, job_id=0)
+        self.assertIs(wait_job(job), job)
+        job.wait.assert_not_called()
+
     def test_cleanup_timeout_does_not_enter_native_wait(self):
         job = MagicMock(done=False)
         with self.assertRaises(TimeoutError):

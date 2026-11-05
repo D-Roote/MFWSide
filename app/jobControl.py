@@ -3,6 +3,8 @@ import time
 
 
 def wait_job(job, *, timeout=None, cancelled=None, cancel_grace=5.0):
+    if job.job_id == 0:
+        return job  # A rejected post never reaches a terminal SDK status.
     deadline = None if timeout is None else time.monotonic() + timeout
     while not job.done:
         now = time.monotonic()
