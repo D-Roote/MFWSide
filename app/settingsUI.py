@@ -30,6 +30,8 @@ from app.programTest import ProgramTestWorker
 from app.settingsNavigation import SETTINGS_SECTIONS, SettingsNavigation, normalize_section_order
 from app.managementUI import ManagementPanel
 from app.paths import PATHS
+from app.configIO import write_json
+from app.dialogs import show_notice
 from app.identity import DEFAULT_APP_NAME, display_name
 from app.startupSettings import WindowsStartupRegistration, normalize_startup_config
 from app.monitoring import normalize_connection_preferences, normalize_screen_preferences
@@ -92,12 +94,7 @@ class SettingsStore:
 
     @staticmethod
     def _write_json(path, data):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path = path.with_suffix(path.suffix + ".tmp")
-        with temp_path.open("w", encoding="utf-8") as file:
-            json.dump(data, file, ensure_ascii=False, indent=4)
-            file.flush()
-        temp_path.replace(path)
+        write_json(path, data)
 
     def load(self, default_controller=None):
         raw_config = self._read_json(self.config_path)
@@ -961,8 +958,13 @@ class SettingsPanel(QWidget):
     def _save(self):
         self._sync_launch_requirements()
         self.config = self._collect_config()
-        self.store.save(self.config)
+        try:
+            self.store.save(self.config)
+        except (OSError, ValueError, TypeError) as error:
+            show_notice(self, "설정 저장 실패", f"변경한 설정을 저장하지 못했습니다.\n쓰기 권한과 디스크 공간을 확인한 뒤 다시 시도하세요.\n{error}")
+            return False
         self.startup_changed.emit()
+        return True
 
     def _sync_launch_requirements(self):
         available = bool(self.program_settings().get("resolved_path"))

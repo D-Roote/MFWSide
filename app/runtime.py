@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 from app.jobControl import wait_job
+from app.projectConfig import selected_resource
 import threading
 import time
 
@@ -333,18 +334,7 @@ class AppRuntime:
     def _get_resource_config(self):
         if self.interface_missing:
             return {"name": "UnavailableResource", "path": []}
-        resources = self.interface.get("resource", [])
-        if not resources:
-            raise ValueError("interface.json에 리소스 항목이 없습니다.")
-
-        resource = resources[0]
-        paths = resource.get("path", [])
-        if not isinstance(paths, list) or not paths:
-            raise ValueError("설정된 리소스 경로 목록이 비어 있습니다.")
-        if not all(isinstance(path, str) and path for path in paths):
-            raise ValueError("모든 리소스 경로는 비어 있지 않은 문자열이어야 합니다.")
-
-        return resource
+        return selected_resource(self.interface)
 
     def _load_resource(self):
         if self.interface_missing:

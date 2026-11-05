@@ -29,6 +29,7 @@ from app.paths import PATHS
 from app.controls import PopupOnlyWheelComboBox
 from app.controlStyle import install_control_style
 from app.dialogs import confirm_deletion, show_notice
+from app.configIO import write_json
 from app.logPresentation import format_log_message
 from app.settingsUI import AssociatedControlLabel, SettingsPanel
 from app.monitorUI import MonitorCoordinator
@@ -3649,28 +3650,23 @@ class MainWindow(QMainWindow):
         
         tasks_data = self._serialize_task_list()
         try:
-            config_dir.mkdir(parents=True, exist_ok=True)
-            temp_path = config_path.with_suffix(".tmp")
-            with open(temp_path, "w", encoding="utf-8") as f:
-                json.dump(
-                    {
-                        "tasks": tasks_data,
-                        "task_presets": {"version": PRESET_VERSION, "items": self.task_presets},
-                        "monitor_order": self.ui.monitorSectionsWidget.section_order(),
-                        "monitor_height_weights": self.ui.monitorSectionsWidget.height_weights(),
-                        "ui_state": self._capture_ui_state() if self._ui_state_ready else self._saved_ui_state,
-                        "after_actions": dict(self.after_actions.saved),
-                        "multi_instances": self.multi_panel.manager.saved_sessions() if hasattr(self, "multi_panel") else [],
-                    },
-                    f,
-                    ensure_ascii=False,
-                    indent=4,
-                )
-                f.flush()
-            temp_path.replace(config_path)
+            write_json(config_path, {
+                "tasks": tasks_data,
+                "task_presets": {"version": PRESET_VERSION, "items": self.task_presets},
+                "monitor_order": self.ui.monitorSectionsWidget.section_order(),
+                "monitor_height_weights": self.ui.monitorSectionsWidget.height_weights(),
+                "ui_state": self._capture_ui_state() if self._ui_state_ready else self._saved_ui_state,
+                "after_actions": dict(self.after_actions.saved),
+                "multi_instances": self.multi_panel.manager.saved_sessions() if hasattr(self, "multi_panel") else [],
+            })
+            self._config_save_error = ""
             return True
         except Exception as e:
-            print(f"설정 파일 저장 실패: {e}")
+            message = f"설정 파일 저장 실패: {e}"
+            if getattr(self, "_config_save_error", "") != message:
+                self._config_save_error = message
+                self.append_log(message)
+                show_notice(self, "설정 저장 실패", "변경한 설정을 저장하지 못했습니다.\n쓰기 권한과 디스크 공간을 확인한 뒤 다시 시도하세요.\n" + str(e))
             return False
 
 # 정지 요청 전용 스레드
