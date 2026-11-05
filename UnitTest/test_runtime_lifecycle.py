@@ -1282,6 +1282,7 @@ class RuntimeLifecycleTests(unittest.TestCase):
         pending = controller.post_inactive.return_value = MagicMock(done=False, job_id=1)
         with patch("app.runtime.CONTROLLER_DRAIN_TIMEOUT_SECONDS", 0):
             self.assertFalse(self.runtime.release_session()[0])
+            controller.connected = False
             self.assertFalse(self.runtime.release_session()[0])
         self.assertIs(self.runtime.controller, controller)
         controller.post_inactive.assert_called_once()

@@ -1344,7 +1344,7 @@ class AppRuntime:
 
                 # SDK binding owns native disposal; do not invalidate live Job handles.
                 self.tasker = None
-                if self.controller is not None and self.controller.connected:
+                if self.controller is not None and (self._pending_inactive_job is not None or self.controller.connected):
                     try:
                         deactivated, message = self._deactivate_controller()
                         if not deactivated:
