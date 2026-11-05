@@ -159,7 +159,7 @@ class ExitCleanupTests(unittest.TestCase):
     def test_real_source_helper_cleans_only_a_copied_temporary_app_after_exit(self):
         source = Path(__file__).resolve().parents[1]
         for relative in ("main.py", "app/__init__.py", "app/paths.py",
-                         "app/storageManagement.py", "app/exitCleanup.py"):
+                         "app/storageManagement.py", "app/projectConfig.py", "app/exitCleanup.py"):
             target = self.root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)

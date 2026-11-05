@@ -3,10 +3,12 @@ from dataclasses import dataclass, field
 import ctypes
 from ctypes import wintypes
 import os
+import json
 from pathlib import Path
 import re
 import stat
 import time
+from app.projectConfig import selected_resource
 
 
 LOG_SUFFIXES = {".log", ".dmp", ".mdmp"}
@@ -63,7 +65,77 @@ def storage_groups(user_dir, root_dir, app_dir, resource_dir):
                StorageGroup("root_cache", "시작 프로그램 캐시", root, root / "__pycache__", "bytecode"),
                StorageGroup("agent_cache", "에이전트 캐시", root, root / "agent", "cache"),
                StorageGroup("resource_agent_cache", "리소스 에이전트 캐시", resources, resources / "agent", "cache")]
-    return groups
+    groups.extend(_declared_storage_groups(root))
+    unique = []
+    for group in groups:
+        # Same-kind ancestors already cover nested caches/logs. Keep different
+        # eligibility policies separate (e.g. shallow user logs vs sessions).
+        if any(item.kind == group.kind and group.root.is_relative_to(item.root) for item in unique):
+            continue
+        unique = [item for item in unique
+                  if not (item.kind == group.kind and item.root.is_relative_to(group.root))]
+        unique.append(group)
+    return unique
+
+
+def _declared_storage_groups(root):
+    """Only generated data within this project; never follow interpreter paths."""
+    try:
+        interface_path = root / "interface.json"
+        if not _safe_path(StorageGroup("interface", "", root, interface_path), interface_path):
+            return []
+        with interface_path.open(encoding="utf-8") as stream:
+            interface = json.load(stream)
+        if not isinstance(interface, dict):
+            return []
+    except (OSError, ValueError):
+        return []
+    result = []
+
+    def add(key, label, folder, kind):
+        candidate = root / folder
+        group = StorageGroup(key, label, root, candidate, kind)
+        try:
+            relative = candidate.relative_to(root)
+            if any(part.casefold() in {"..", ".cache", ".git", ".venv", "venv"} for part in relative.parts):
+                return
+            if _safe_path(group, candidate):
+                result.append(group)
+        except (OSError, ValueError):
+            return
+
+    try:
+        paths = selected_resource(interface)["path"]
+    except ValueError:
+        paths = []
+    for index, value in enumerate(paths):
+        add(f"declared_resource_{index}", "작업 로그", Path(value) / "debug", "debug")
+        add(f"declared_resource_agent_{index}", "리소스 에이전트 캐시", Path(value) / "agent", "cache")
+    agents = interface.get("agent", [])
+    if isinstance(agents, dict):
+        agents = [agents]
+    if not isinstance(agents, list):
+        return result
+    for index, agent in enumerate(agents):
+        arguments = agent.get("child_args", []) if isinstance(agent, dict) else []
+        if not isinstance(arguments, list):
+            continue
+        # Script invocation only. Do not interpret -c/-m, arbitrary data args,
+        # or child_exec (which may point into a shared Python installation).
+        for argument in arguments:
+            if not isinstance(argument, str) or "\0" in argument or argument in {"-c", "-m"}:
+                break
+            if argument.startswith("-"):
+                continue
+            script = Path(argument)
+            if script.suffix.casefold() in {".py", ".pyw"}:
+                folder = script.parent
+                if folder == Path(".") or folder == root:
+                    add(f"declared_agent_{index}", "에이전트 캐시", folder / "__pycache__", "bytecode")
+                else:
+                    add(f"declared_agent_{index}", "에이전트 캐시", folder, "cache")
+            break
+    return result
 
 
 def _is_reparse(info):
@@ -158,7 +230,10 @@ def _files(group, errors, cancelled):
         if cancelled():
             return
         current = Path(directory)
-        subdirs[:] = [name for name in subdirs if name != ".cache" and _safe_path(group, current / name)]
+        subdirs[:] = [name for name in subdirs
+                     if name.casefold() not in {".cache", ".git", ".venv", "venv"}
+                     and not (current / name / "pyvenv.cfg").exists()
+                     and _safe_path(group, current / name)]
         if group.kind == "shallow":
             subdirs.clear()
         for name in filenames:

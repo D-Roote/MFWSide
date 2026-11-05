@@ -33,7 +33,36 @@ class StorageManagementTests(unittest.TestCase):
     def scan(self):
         return scan_storage(self.groups, self.user)
 
-    def test_task_traces_error_images_and_python_bytecode_are_counted(self):
+    def test_declared_overlay_and_agent_paths_share_manual_and_exit_policy(self):
+        from app.exitCleanup import cleanup_generated_files
+        from app.paths import ApplicationPaths
+        self.put("interface.json", json.dumps({
+            "resource": [{"path": ["packs/base", "packs/extra", "packs/base"]}],
+            "agent": {"child_exec": ".venv/Scripts/python.exe", "child_args": ["-u", "scripts/custom/main.py"]}
+        }).encode())
+        removable = [self.put(name) for name in (
+            "packs/base/debug/old.log", "packs/extra/debug/old.png",
+            "scripts/custom/__pycache__/main.pyc")]
+        protected = [self.put(name) for name in (
+            "packs/base/image/template.png", "packs/base/model/ocr.bin",
+            "scripts/custom/main.py", "scripts/custom/accounts/saved.json",
+            "scripts/custom/.venv/__pycache__/keep.pyc")]
+        groups = storage_groups(self.user, self.root, self.root / "app", self.root / "resource")
+        self.assertEqual(sum(item.removable_files for item in scan_storage(groups, self.user)), 3)
+        result = cleanup_generated_files(ApplicationPaths(self.root, self.root / "app"))
+        self.assertEqual(result.files, 3)
+        self.assertTrue(all(not path.exists() for path in removable))
+        self.assertTrue(all(path.exists() for path in protected))
+
+    def test_external_and_development_paths_are_not_added(self):
+        self.put("interface.json", json.dumps({
+            "resource": [{"path": ["../outside", ".cache/project", ".venv/package"]}],
+            "agent": {"child_exec": "python", "child_args": ["../agent/main.py"]}
+        }).encode())
+        groups = storage_groups(self.user, self.root, self.root / "app", self.root / "resource")
+        self.assertFalse(any(item.key.startswith("declared_") for item in groups))
+
+    def test_generated_data_are_counted(self):
         for name in ("user/debug/maafw.log", "user/debug/maafw.bak.old.log",
                      "user/debug/error/shot.png", "app/__pycache__/main.cpython-310.pyc"):
             self.put(name)
