@@ -227,8 +227,10 @@ class PresetUITests(unittest.TestCase):
         self.assertEqual(self.read_config(), {})
 
     def test_config_directory_failure_is_reported_without_changing_library(self):
-        with patch("app.winUI.Path.mkdir", side_effect=OSError("denied")), patch("builtins.print"):
+        with patch("app.winUI.Path.mkdir", side_effect=OSError("denied")), \
+                patch("app.winUI.show_notice") as notice:
             self.assertFalse(self.window._save_task_preset("Rejected"))
+        notice.assert_called_once()
         self.assertEqual(self.window.task_presets, [])
         self.assertTrue(self.panel.status.property("error"))
 
