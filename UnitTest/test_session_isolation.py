@@ -19,6 +19,7 @@ from app.sessionRuntime import SessionRuntime
 def exit_during_session(sender, flag):
     # An intentional exit status, not an access violation/Windows error popup.
     sender.put(("log", "before exit"), timeout=1)
+    sender.flush()
     while not flag.is_set():
         time.sleep(0.005)
     os._exit(7)

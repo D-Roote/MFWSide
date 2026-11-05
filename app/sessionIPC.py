@@ -8,7 +8,13 @@ import time
 class SessionEventSender:
     def __init__(self, connection):
         self.connection = connection
-        self._lock = threading.Lock()
+        self._condition = threading.Condition()
+        self._pending = deque(maxlen=512)
+        self._critical = {}
+        self._sending = False
+        self._closing = False
+        self._error = None
+        self._thread = None
 
     def __getstate__(self):
         return {"connection": self.connection}
@@ -17,15 +23,72 @@ class SessionEventSender:
         self.__init__(state["connection"])
 
     def put(self, value, timeout=0):
-        if not self._lock.acquire(timeout=timeout):
-            return
+        # SDK callbacks only enqueue. Connection.send has no timeout and must
+        # never hold a callback/task thread waiting for a stalled GUI.
+        with self._condition:
+            if self._error is not None or self._closing:
+                raise OSError("세션 메시지 송신이 종료되었습니다.") from self._error
+            if value[0] in ("result", "disconnected"):
+                self._critical[value[0]] = value
+            else:
+                self._pending.append(value)
+            if self._thread is None:
+                self._thread = threading.Thread(target=self._send, name="session-send", daemon=True)
+                try:
+                    self._thread.start()
+                except RuntimeError as error:
+                    self._error = error
+                    self._thread = None
+                    raise OSError("세션 송신 스레드를 시작하지 못했습니다.") from error
+            self._condition.notify_all()
+
+    def _send(self):
         try:
-            self.connection.send(value)
+            while True:
+                with self._condition:
+                    while not self._critical and not self._pending:
+                        if self._closing:
+                            return
+                        self._condition.wait()
+                    if self._critical:
+                        key = next(iter(self._critical))
+                        item = self._critical.pop(key)
+                    else:
+                        item = self._pending.popleft()
+                    self._sending = True
+                self.connection.send(item)
+                with self._condition:
+                    self._sending = False
+                    self._condition.notify_all()
+        except Exception as error:
+            with self._condition:
+                self._error = error
+                self._sending = False
+                self._condition.notify_all()
         finally:
-            self._lock.release()
+            self.connection.close()
+
+    def flush(self, timeout=2):
+        deadline = time.monotonic() + timeout
+        with self._condition:
+            while self._pending or self._critical or self._sending:
+                if self._error is not None:
+                    raise OSError("세션 메시지를 전송하지 못했습니다.") from self._error
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("세션 메시지 전송 대기 시간이 초과되었습니다.")
+                self._condition.wait(remaining)
+            if self._error is not None:
+                raise OSError("세션 메시지를 전송하지 못했습니다.") from self._error
 
     def close(self):
-        self.connection.close()
+        with self._condition:
+            self._closing = True
+            if self._thread is None:
+                self.connection.close()  # Parent's unused writer copy.
+            self._condition.notify_all()
+        # The sender owns its active handle. Never close it from a second
+        # thread during native I/O, or join it on the GUI thread.
 
 
 class SessionEventInbox:

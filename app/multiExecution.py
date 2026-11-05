@@ -72,8 +72,10 @@ def session_process(snapshot, connection, mode, stop_event, events, desktop_lock
     def send(kind, value):
         try:
             events.put((kind, value), timeout=2 if kind in ("result", "disconnected") else 0)
-        except (Full, EOFError, OSError, ValueError):
-            pass  # A stalled GUI cannot accumulate an unbounded native log queue.
+        except (Full, EOFError, OSError, ValueError) as error:
+            stop_event.set()
+            if kind == "result":
+                raise RuntimeError("세션 실행 결과를 전송하지 못했습니다.") from error
 
     try:
         preset = resolve_preset(snapshot, connection)
@@ -156,6 +158,8 @@ def session_process(snapshot, connection, mode, stop_event, events, desktop_lock
             outcome["message"] += "\n작업이 중지되었습니다."
         outcome["message"] = "\n".join(dict.fromkeys(outcome["message"].splitlines()))
         send("result", outcome)
+        if hasattr(events, "flush"):
+            events.flush(timeout=2)
         # DesktopLease.release is a no-op: the parent admits another session
         # only after this process exits, including an abnormal native exit.
         if locked:
