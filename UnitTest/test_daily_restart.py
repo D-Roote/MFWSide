@@ -312,7 +312,7 @@ class DailyRestartUITests(unittest.TestCase):
         start.assert_not_called()
         self.assertTrue(self.daily.ready_to_close)
 
-    def test_running_instances_are_snapshotted_and_resumed_individually(self):
+    def test_running_instances_are_not_stopped_or_restarted(self):
         self.enable()
         from test_multi_execution import FakeContext, FakeQueue, connection
         manager = self.window.multi_panel.manager
@@ -329,16 +329,15 @@ class DailyRestartUITests(unittest.TestCase):
         with patch.object(self.window.multi_panel, "start_sessions") as start, \
                 patch.object(self.window, "on_task_start") as base_start:
             self.daily._begin()
-            self.assertEqual([job["id"] for job in self.daily.jobs], ids)
+            self.assertEqual(self.daily.jobs, [])
+            self.assertFalse(self.daily.active)
             self.restart.assert_not_called()
             for session in manager.sessions.values():
-                self.assertTrue(session.stop_event.is_set())
+                self.assertFalse(session.stop_event.is_set())
                 session.process = None
-            self.daily.tick()
-            self.finish()
-        self.assertEqual(start.call_count, 2)
+        start.assert_not_called()
         base_start.assert_not_called()
-        self.assertEqual(self.restart.call_count, 2)
+        self.restart.assert_not_called()
 
     def test_failure_does_not_start_tasks_or_retry_on_next_tick(self):
         self.enable()

@@ -97,20 +97,16 @@ class DailyRestartCoordinator(QObject):
         if not window.settings_panel.program_settings().get("resolved_path"):
             window.append_log("실행 경로가 없어 일일 초기화 재시작을 생략했습니다.")
             return
+        if not window.multi_panel.ready_to_close:
+            window.append_log("다중 실행이 진행 중이므로 시작 탭의 일일 재시작을 생략했습니다.")
+            return
         try:
-            ids = [session.id for session in window.multi_panel.manager.sessions.values()
-                   if session.active and session.mode == "run"]
-            jobs = []
-            for session_id in ids or [None]:
-                session = window.multi_panel.manager.sessions.get(session_id)
-                snapshot = (window.multi_panel.snapshot_for_session(session_id) if session is not None
-                            else window.multi_execution_snapshot())
-                snapshot["queue"] = [(entry, override) for entry, override in snapshot["queue"]
-                                     if entry != PROGRAM_LAUNCH_ENTRY]
-                if not snapshot["queue"]:
-                    raise ValueError("일일 재시작 후 실행할 작업이 선택되지 않았습니다.")
-                connection = deepcopy(session.connection) if session is not None else self._base_connection(snapshot)
-                jobs.append({"id": session_id, "snapshot": snapshot, "connection": connection})
+            snapshot = window.multi_execution_snapshot()
+            snapshot["queue"] = [(entry, override) for entry, override in snapshot["queue"]
+                                 if entry != PROGRAM_LAUNCH_ENTRY]
+            if not snapshot["queue"]:
+                raise ValueError("일일 재시작 후 실행할 작업이 선택되지 않았습니다.")
+            jobs = [{"snapshot": snapshot, "connection": self._base_connection(snapshot)}]
         except (KeyError, TypeError, ValueError, RuntimeError) as error:
             window.append_log(f"일일 초기화 재시작을 생략했습니다: {error}")
             return
@@ -133,7 +129,6 @@ class DailyRestartCoordinator(QObject):
         try:
             if window.worker is not None:
                 window.on_task_stop()
-            window.multi_panel.manager.stop_all()
         finally:
             self.stopping_tasks = False
         self._advance()
@@ -177,6 +172,10 @@ class DailyRestartCoordinator(QObject):
     def _start_worker(self):
         if not self.active or self.cancelled or self.closing or self.worker is not None:
             return
+        if not self.window.multi_panel.ready_to_close:
+            self.window.append_log("다중 실행이 시작되어 일일 재시작을 취소했습니다.")
+            self.cancel()
+            return
         self.phase = "restarting"
         self.worker = worker = DailyRestartWorker(self.jobs, self)
         worker.finished.connect(self._finished)
@@ -204,12 +203,8 @@ class DailyRestartCoordinator(QObject):
             if job["error"]:
                 self.window.append_log(f"일일 재시작 실패: {job['error']}")
                 continue
-            if job["id"] is None:
-                self.window._startup_queue_override = deepcopy(job["snapshot"]["queue"])
-                self.window.on_task_start()
-            elif job["id"] in self.window.multi_panel.manager.sessions:
-                self.window.multi_panel.manager.configure(job["id"], job["connection"])
-                self.window.multi_panel.start_sessions([job["id"]], snapshot=job["snapshot"])
+            self.window._startup_queue_override = deepcopy(job["snapshot"]["queue"])
+            self.window.on_task_start()
 
     def cancel(self):
         if not self.active or self.cancelled:
