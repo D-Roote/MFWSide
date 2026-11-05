@@ -152,7 +152,7 @@ class InstanceTaskPresetTests(unittest.TestCase):
             callbacks[0]()
         self.assertEqual(self.queue(sid)[-1][1]["Test_Node"]["next"], ["B"])
 
-    def test_daily_restart_snapshots_the_instance_preset(self):
+    def test_daily_restart_does_not_change_or_stop_the_instance_preset(self):
         sid = self.add()
         self.select(sid, self.preset())
         expected = self.panel.snapshot_for_session(sid)["queue"]
@@ -163,9 +163,11 @@ class InstanceTaskPresetTests(unittest.TestCase):
         self.window.settings_panel._apply_program_path()
         with patch.object(self.window.daily_restart, "_advance"):
             self.window.daily_restart._begin()
-        self.assertEqual(self.window.daily_restart.jobs[0]["id"], sid)
-        self.assertEqual(self.window.daily_restart.jobs[0]["snapshot"]["queue"], expected)
-        self.window.daily_restart.cancel()
+        self.assertEqual(self.window.daily_restart.jobs, [])
+        self.assertFalse(self.window.daily_restart.active)
+        self.assertFalse(self.manager.sessions[sid].stop_event.is_set())
+        self.assertTrue(self.manager.sessions[sid].active)
+        self.assertEqual(self.panel.snapshot_for_session(sid)["queue"], expected)
 
     def test_layout_settings_left_of_discovery_and_preset_half_target_width(self):
         sid = self.add()
