@@ -97,13 +97,19 @@ class SessionFailureIsolationTests(unittest.TestCase):
         self.assertEqual(a.state, "failed")
         self.assertTrue(b.active)
 
-    def test_manual_stop_has_no_force_termination_deadline(self):
-        a = self.start("device-a")
-        self.manager.stop(a.id)
-        with patch("app.multiExecution.time.monotonic", return_value=100000):
+    def test_manual_stop_deadline_is_not_extended_and_only_terminates_owned_worker(self):
+        a, b = self.start("device-a"), self.start("device-b")
+        with patch("app.multiExecution.time.monotonic", return_value=1):
+            self.manager.stop(a.id)
+        with patch("app.multiExecution.time.monotonic", return_value=10):
+            self.manager.stop(a.id)
             self.manager.poll()
         self.assertFalse(a.process.terminated)
-        self.assertEqual(a.state, "stopping")
+        with patch("app.multiExecution.time.monotonic", return_value=17):
+            self.manager.poll()
+        self.assertTrue(a.process.terminated)
+        self.assertFalse(b.process.terminated)
+        self.assertFalse(b.stop_event.is_set())
 
     def test_failed_result_with_stuck_native_destructor_has_a_cleanup_deadline(self):
         a, b = self.start("device-a"), self.start("device-b")
@@ -131,7 +137,7 @@ class SessionFailureIsolationTests(unittest.TestCase):
         self.assertEqual(a.state, "failed")
         self.assertTrue(b.active)
 
-    def test_cancelled_result_keeps_the_manual_stop_no_force_policy(self):
+    def test_cancelled_result_has_exit_grace(self):
         a = self.start("device-a")
         self.manager.stop(a.id)
         a.events.put(("result", {"succeeded": False, "message": "cancelled"}))
@@ -139,7 +145,7 @@ class SessionFailureIsolationTests(unittest.TestCase):
             self.manager.poll()
         with patch("app.multiExecution.time.monotonic", return_value=100000):
             self.manager.poll()
-        self.assertFalse(a.process.terminated)
+        self.assertTrue(a.process.terminated)
 
     def test_bad_pipe_does_not_prevent_another_session_finishing(self):
         for error in (EOFError("eof"), OSError("broken pipe"), ValueError("closed"), TypeError("bad message")):

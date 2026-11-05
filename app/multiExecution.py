@@ -19,6 +19,7 @@ from app.sessionIPC import DesktopLease, SessionEventInbox, SharedFlag
 
 
 FAILED_SESSION_CLEANUP_SECONDS = 8.0
+STOP_SESSION_CLEANUP_SECONDS = 15.0
 EXIT_EVENT_DRAIN_SECONDS = 1.0
 
 
@@ -182,6 +183,7 @@ class Session:
     exited_at: float | None = None
     termination_requested: bool = False
     result_received_at: float | None = None
+    stop_requested_at: float | None = None
 
     @property
     def active(self):
@@ -285,6 +287,7 @@ class SessionManager(QObject):
         session.exited_at = None
         session.termination_requested = False
         session.result_received_at = None
+        session.stop_requested_at = None
         session.needs_desktop = needs_desktop_lock(resolve_preset(request, session.connection), request.get("minimize", False))
         session.desktop_lease = DesktopLease(SharedFlag(self.context))
         session.logs.clear() if request.get("clear_log") else None
@@ -324,6 +327,8 @@ class SessionManager(QObject):
     def stop(self, session_id):
         session = self.sessions.get(session_id)
         if session is not None and session.active:
+            if session.stop_requested_at is None:
+                session.stop_requested_at = time.monotonic()
             session.stop_event.set()
             session.state = "stopping"
             self.changed.emit(session_id)
@@ -394,7 +399,11 @@ class SessionManager(QObject):
                 self._fail_session(session, session.events.error)
             if was_alive:
                 now = time.monotonic()
-                if (session.result_received_at is not None and not session.stop_event.is_set()
+                if (session.stop_requested_at is not None and not session.failure_reason
+                        and now - session.stop_requested_at >= STOP_SESSION_CLEANUP_SECONDS):
+                    self._fail_session(session, "중지 요청 후 세션이 응답하지 않아 해당 인스턴스만 정리합니다.")
+                    session.failure_deadline = now
+                if (session.result_received_at is not None and not session.failure_reason
                         and now - session.result_received_at >= FAILED_SESSION_CLEANUP_SECONDS):
                     self._fail_session(session, "실행 결과 수신 후 세션 프로세스가 종료되지 않아 해당 인스턴스만 정리합니다.")
                     session.failure_deadline = now  # The terminal-result cleanup grace has already elapsed.

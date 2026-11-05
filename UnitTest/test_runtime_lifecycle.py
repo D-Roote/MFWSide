@@ -1264,7 +1264,30 @@ class RuntimeLifecycleTests(unittest.TestCase):
         self.assertIsNone(self.runtime.tasker)
         tasker.post_stop.assert_called_once()
 
-    def test_failed_stop_keeps_session_for_retry(self):
+    def test_stop_timeout_retains_live_handles_and_reuses_pending_job(self):
+        tasker = self.runtime.tasker = MagicMock(running=True, stopping=True)
+        controller = self.runtime.controller = MagicMock(connected=True)
+        pending = tasker.post_stop.return_value = MagicMock(done=False)
+        with patch("app.runtime.CONTROLLER_DRAIN_TIMEOUT_SECONDS", 0):
+            self.assertFalse(self.runtime.release_session()[0])
+            self.assertFalse(self.runtime.release_session()[0])
+        self.assertIs(self.runtime.tasker, tasker)
+        self.assertIs(self.runtime.controller, controller)
+        tasker.post_stop.assert_called_once()
+        pending.wait.assert_not_called()
+        controller.post_inactive.assert_not_called()
+
+    def test_inactive_timeout_retains_controller_and_pending_job(self):
+        controller = self.runtime.controller = MagicMock(connected=True)
+        pending = controller.post_inactive.return_value = MagicMock(done=False, job_id=1)
+        with patch("app.runtime.CONTROLLER_DRAIN_TIMEOUT_SECONDS", 0):
+            self.assertFalse(self.runtime.release_session()[0])
+            self.assertFalse(self.runtime.release_session()[0])
+        self.assertIs(self.runtime.controller, controller)
+        controller.post_inactive.assert_called_once()
+        pending.wait.assert_not_called()
+
+    def test_failed_stop_retains_session_for_retry(self):
         tasker = MagicMock(running=True, stopping=False)
         tasker.post_stop.return_value = make_job(False)
         self.runtime.tasker = tasker

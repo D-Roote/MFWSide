@@ -5,6 +5,7 @@ import csv
 import json
 import re
 import subprocess
+from app.jobControl import wait_job
 import threading
 import time
 
@@ -189,6 +190,9 @@ class AppRuntime:
         self._resource_loaded = False
         self._agent_session = None
         self._task_post_lock = threading.Lock()
+        self._stop_requested = threading.Event()
+        self._pending_stop_job = None
+        self._pending_inactive_job = None
         self._preview_capture_idle = threading.Event()
         self._preview_capture_idle.set()
         self._user32 = create_user32()
@@ -1136,7 +1140,9 @@ class AppRuntime:
         ]
 
         if not execution_queue:
-            self.release_session()
+            released, message = self.release_session()
+            if not released:
+                return False, message
             return True, "프로그램 실행 작업을 완료했습니다."
         
         minimize_error = None
@@ -1204,7 +1210,9 @@ class AppRuntime:
 
             failed_labels = []
             for entry, job in jobs:
-                job.wait()
+                wait_job(job, cancelled=lambda: self._stop_requested.is_set() or
+                         bool(cancellation_requested and cancellation_requested()),
+                         cancel_grace=CONTROLLER_DRAIN_TIMEOUT_SECONDS)
                 if self._agent_session is not None:
                     self._agent_session.ensure_running()
                 if not job.succeeded:
@@ -1300,12 +1308,17 @@ class AppRuntime:
             if self._controller_sink_id is not None:
                 if not self._controller_activity.wait_quiet(deadline):
                     return False, "정리 중 컨트롤러 동작 완료를 기다리는 시간이 초과되었습니다."
-            job = self.controller.post_inactive()
+            job = self._pending_inactive_job
+            if job is None:
+                job = self.controller.post_inactive()
             # MaaInvalidId (0) means the post was rejected, NOT an inactive
             # action that executed and failed. Stop can finish before a native
             # capture/input finishes; never wait on a rejected job or destroy it.
             if job.job_id != 0:
-                if job.wait().succeeded:
+                self._pending_inactive_job = job
+                result = wait_job(job, timeout=max(0, deadline - time.monotonic()))
+                self._pending_inactive_job = None
+                if result.succeeded:
                     return True, ""
                 return False, "정리 중 컨트롤러 비활성화에 실패했습니다."
             remaining = deadline - time.monotonic()
@@ -1314,14 +1327,21 @@ class AppRuntime:
             time.sleep(min(retry_delay, remaining))
             retry_delay = min(retry_delay * 2, 0.5)
 
+    def _wait_for_stop(self):
+        if self._pending_stop_job is None:
+            self._pending_stop_job = self.tasker.post_stop()
+        result = wait_job(self._pending_stop_job, timeout=CONTROLLER_DRAIN_TIMEOUT_SECONDS)
+        self._pending_stop_job = None
+        return result.succeeded
+
     def release_session(self):
         """정지 완료 후 Tasker, 컨트롤러, 창 상태 순서로 실행 상태를 정리한다."""
         self.log_sink.set_first_action_callback(None)
         with self._task_post_lock:
             try:
                 if self.tasker is not None:
-                    if self.tasker.running or self.tasker.stopping:
-                        if not self.tasker.post_stop().wait().succeeded:
+                    if self._pending_stop_job is not None or self.tasker.running or self.tasker.stopping:
+                        if not self._wait_for_stop():
                             return False, "정리 중 Tasker 중지에 실패했습니다."
                     if self._context_sink_id is not None:
                         self.tasker.remove_context_sink(self._context_sink_id)
@@ -1371,6 +1391,7 @@ class AppRuntime:
                 self._adb_minimize_reported = False
                 self._adb_minimize_skipped = False
                 self._startup_cancellation_requested = None
+                self._stop_requested.clear()
                 if cleanup_errors:
                     return False, " ".join(cleanup_errors)
                 return True, "Runtime 실행 상태를 정리했습니다."
@@ -1378,14 +1399,13 @@ class AppRuntime:
                 return False, f"Runtime 정리 중 오류가 발생했습니다: {error}"
         
     def stop_task(self):
+        self._stop_requested.set()
         try:
             with self._task_post_lock:
-                if self.tasker is None or not self.tasker.running:
+                if self.tasker is None or not (self.tasker.running or self.tasker.stopping):
                     return False, "실행 중인 Tasker가 없습니다."
-                stop_job = self.tasker.post_stop()
                 # 정지 완료 전에는 cleanup/다음 실행이 같은 Tasker에 접근하지 못하게 한다.
-                stop_job.wait()
-                if not stop_job.succeeded:
+                if not self._wait_for_stop():
                     return False, "Tasker 중지에 실패했습니다."
             return True, "작업 중지 중입니다..."
         except Exception as error:
