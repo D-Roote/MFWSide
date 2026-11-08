@@ -20,6 +20,8 @@ MaaFramework와 PySide6 기반의 Windows용 MAA Framework 범용 실행 앱입�
 
 배포 앱에는 Python이 포함되지만 게임별 리소스는 포함되지 않습니다. **Python Agent를 사용하는 리소스는 별도 Python 실행 환경과 해당 Agent의 의존성이 필요합니다.**
 
+Agent 연결은 `127.0.0.1`의 로컬 TCP를 사용하며 기본 포트는 자동 할당합니다. `agent.identifier`에 `1~65535`의 숫자 문자열을 지정하면 해당 포트를 사용합니다. 기존 문자열 식별자는 중복 실행 방지용 이름으로 유지하고, Agent 실행 인수에는 실제 할당된 포트번호를 전달합니다. Agent는 전달받은 식별자를 `AgentServer.start_up()`에 사용해야 합니다.
+
 사용자 설정과 세션 로그는 EXE 옆의 `user/`에 저장됩니다. 앱이나 리소스를 교체할 때 이 폴더를 유지해야 사용자 설정이 유지됩니다.
 
 기존 `assets` 구조에서 전환할 때는 앱을 종료한 상태에서 `assets/user/`를 최상위 `user/`로 옮기고, `interface.json`의 위치가 바뀐 만큼 `resource[].path`와 Agent 실행 경로를 조정하세요. 예를 들어 기존 리소스의 `path: ["."]`는 `resource/`로 옮겼다면 `["resource"]`로 바꿉니다. 앱이 기존 파일을 자동 이동하거나 새·이전 설정을 병합하지는 않습니다.

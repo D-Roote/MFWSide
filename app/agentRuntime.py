@@ -1,4 +1,4 @@
-"""Project Interface Agent processes owned by exactly one execution session."""
+"""Project Interface Agents connected through session-owned loopback TCP."""
 from copy import deepcopy
 from dataclasses import dataclass
 from hashlib import sha256
@@ -58,9 +58,24 @@ def normalize_agents(value):
     return specs
 
 
+def _tcp_port(identifier):
+    """Parse a concrete SDK port; other PI identifiers remain logical names."""
+    if not isinstance(identifier, str) or not identifier.isascii() or not identifier.isdecimal():
+        return None
+    digits = identifier.lstrip("0")
+    # Bound conversion even when an existing IPC name contains many digits.
+    if not digits or len(digits) > 5:
+        return None
+    port = int(digits)
+    return port if port <= 65535 else None
+
+
 def endpoint_key(identifier):
-    if identifier.isascii() and identifier.isdecimal() and 1 <= int(identifier) <= 65535:
-        return "tcp:" + str(int(identifier))
+    port = _tcp_port(identifier)
+    if port is not None:
+        return "tcp:" + str(port)
+    # Preserve lease filenames shared with older clients. This key does not
+    # select IPC transport: named identifiers now use dynamically bound TCP.
     return "ipc:" + (identifier.casefold() if sys.platform == "win32" else identifier)
 
 
@@ -159,7 +174,9 @@ class AgentSession:
             self._check_cancel(cancellation_requested)
             lease = EndpointLease(spec.identifier) if spec.identifier else None
             try:
-                client = AgentClient(spec.identifier)
+                # Bind directly so parallel sessions cannot race over a
+                # preselected free port. Never fall back to a filesystem socket.
+                client = AgentClient.create_tcp(_tcp_port(spec.identifier) or 0)
             except Exception:
                 if lease is not None:
                     lease.close()
@@ -169,8 +186,8 @@ class AgentSession:
             if not client.bind(resource):
                 raise RuntimeError(f"Agent {index}: 리소스 바인딩에 실패했습니다.")
             identifier = client.identifier
-            if not isinstance(identifier, str) or not identifier:
-                raise RuntimeError(f"Agent {index}: 연결 식별자를 가져오지 못했습니다.")
+            if _tcp_port(identifier) is None:
+                raise RuntimeError(f"Agent {index}: 유효한 로컬 TCP 연결 포트를 가져오지 못했습니다.")
             if not client.set_timeout(AGENT_START_TIMEOUT_MS):
                 raise RuntimeError(f"Agent {index}: 연결 제한 시간을 설정하지 못했습니다.")
             self.log_dir.mkdir(parents=True, exist_ok=True)
