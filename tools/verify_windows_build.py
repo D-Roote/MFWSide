@@ -242,16 +242,30 @@ def verify_spawn(executable, agent_python=None, probe_directory=None):
             # No test harness or Agent is added to the application bundle.
             script = Path(__file__).with_name('verify_agent_tcp.py').resolve()
             report = Path(probe_directory) / 'result.json'
-            code = script.read_text(encoding='utf-8') + (
+            payload = script.read_text(encoding='utf-8') + (
                 f'\n_result = verify({str(probe_directory)!r}, {str(agent_python)!r}, {str(script)!r})\n'
                 f'Path({str(report)!r}).write_text(json.dumps(_result), encoding="utf-8")\n'
+            )
+            error_report = Path(probe_directory).with_suffix('.error.txt')
+            code = (
+                'import sys\n'
+                # The base-Python harness supplies its own sys.path to spawn;
+                # restore the frozen import root before exercising bundled SDKs.
+                'sys.path.insert(0, sys._MEIPASS)\n'
+                'import traceback\n'
+                'try:\n'
+                f'    exec({payload!r}, globals())\n'
+                'except BaseException:\n'
+                f'    open({str(error_report)!r}, "w", encoding="utf-8").write(traceback.format_exc())\n'
+                '    raise SystemExit(1)\n'
             )
             agent_process = context.Process(target=exec, args=(code, {'__name__': 'frozen_tcp_probe', '__file__': str(script)}))
             try:
                 agent_process.start()
                 agent_process.join(timeout=45)
                 if agent_process.exitcode != 0:
-                    raise RuntimeError(f'Frozen Agent TCP verification failed: {agent_process.exitcode}')
+                    detail = error_report.read_text(encoding='utf-8') if error_report.exists() else 'No error report'
+                    raise RuntimeError(f'Frozen Agent TCP verification failed: {agent_process.exitcode}\n{detail}')
                 result['agent_tcp'] = json.loads(report.read_text(encoding='utf-8'))
                 if not result['agent_tcp'].get('ok'):
                     raise RuntimeError('Frozen Agent TCP probe did not succeed')

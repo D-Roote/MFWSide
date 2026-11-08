@@ -49,6 +49,13 @@ def verify(directory, python, script):
     from maa.toolkit import Toolkit
     from app.agentRuntime import AgentSession, normalize_agents
 
+    frozen = getattr(sys, 'frozen', False)
+    if frozen:
+        bundle = Path(sys._MEIPASS).resolve()
+        for name in ('app.agentRuntime', 'maa.agent_client'):
+            if not Path(sys.modules[name].__file__).resolve().is_relative_to(bundle):
+                raise RuntimeError(f'Probe imported source code instead of bundled {name}')
+
     class MemoryController(CustomController):
         def connect(self):
             return True
@@ -135,7 +142,7 @@ def verify(directory, python, script):
     assert 'ipc://C:/Temp/maafw-agent-' not in trace
     addresses = sorted(set(re.findall(r'tcp://127\.0\.0\.1:\d+', trace)))
     assert len(addresses) >= 2, addresses
-    return {'ok': True, 'sessions': results, 'fixed_port_reconnect': True,
+    return {'ok': True, 'frozen_runtime': frozen, 'sessions': results, 'fixed_port_reconnect': True,
             'peer_survived_disconnect': True, 'clean_agent_exit': True,
             'tcp_addresses': addresses, 'filesystem_ipc_in_trace': False,
             'new_socket_files_during_probe': sorted({p.name for p in socket_directory.glob('maafw-agent-*.sock')} - before)}
