@@ -212,7 +212,7 @@ def verify_session_ipc(context):
         sys.path.remove(project)
 
 
-def verify_spawn(executable):
+def verify_spawn(executable, agent_python=None, probe_directory=None):
     if popen_spawn_win32.WINENV:
         raise RuntimeError('Run the verification harness with the base Python, not the venv redirector')
     context = mp.get_context('spawn')
@@ -235,7 +235,33 @@ def verify_spawn(executable):
         process.join(timeout=10)
         if process.exitcode != 0:
             raise RuntimeError(f'Frozen spawn failed: {process.exitcode}')
-        return {'standard_queue': True, 'session_ipc': verify_session_ipc(context)}
+        result = {'standard_queue': True, 'session_ipc': verify_session_ipc(context)}
+        if agent_python is not None:
+            # Execute the host-side probe inside the real frozen worker, using
+            # its bundled app/SDK and an explicitly separate Agent interpreter.
+            # No test harness or Agent is added to the application bundle.
+            script = Path(__file__).with_name('verify_agent_tcp.py').resolve()
+            report = Path(probe_directory) / 'result.json'
+            code = script.read_text(encoding='utf-8') + (
+                f'\n_result = verify({str(probe_directory)!r}, {str(agent_python)!r}, {str(script)!r})\n'
+                f'Path({str(report)!r}).write_text(json.dumps(_result), encoding="utf-8")\n'
+            )
+            agent_process = context.Process(target=exec, args=(code, {'__name__': 'frozen_tcp_probe', '__file__': str(script)}))
+            try:
+                agent_process.start()
+                agent_process.join(timeout=45)
+                if agent_process.exitcode != 0:
+                    raise RuntimeError(f'Frozen Agent TCP verification failed: {agent_process.exitcode}')
+                result['agent_tcp'] = json.loads(report.read_text(encoding='utf-8'))
+                if not result['agent_tcp'].get('ok'):
+                    raise RuntimeError('Frozen Agent TCP probe did not succeed')
+            finally:
+                if agent_process.pid is not None and agent_process.is_alive():
+                    agent_process.terminate()
+                    agent_process.join(timeout=10)
+                if agent_process.pid is not None:
+                    agent_process.close()
+        return result
     finally:
         sys.executable = old_executable
         if old_frozen is None:
@@ -259,6 +285,7 @@ def main(argv=None):
     parser.add_argument('directory', type=Path)
     parser.add_argument('--report', type=Path)
     parser.add_argument('--dll-only', action='store_true')
+    parser.add_argument('--agent-python', type=Path, help='External Python with MaaFw for the Agent TCP probe')
     options = parser.parse_args(argv)
     if sys.platform != 'win32':
         parser.error('Windows is required')
@@ -287,9 +314,13 @@ def main(argv=None):
         isolated = temporary / 'MFWSide'
         shutil.copytree(directory, isolated)
         result['gui'] = verify_gui(isolated)
-        spawn = verify_spawn(isolated / 'MFWSide.exe')
+        spawn = verify_spawn(isolated / 'MFWSide.exe',
+                             options.agent_python.resolve() if options.agent_python else None,
+                             temporary / 'agent-tcp')
         result['frozen_multiprocessing_spawn'] = spawn['standard_queue']
         result['frozen_session_ipc'] = spawn['session_ipc']
+        if 'agent_tcp' in spawn:
+            result['frozen_agent_tcp'] = spawn['agent_tcp']
         result['ok'] = True
         success = True
     finally:

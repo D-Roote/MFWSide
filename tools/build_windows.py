@@ -140,7 +140,7 @@ def main(argv=None):
     probe = ROOT / '.cache' / 'windows-bundle-verification.json'
     subprocess.run([
         sys._base_executable, str(ROOT / 'tools' / 'verify_windows_build.py'),
-        str(output), '--report', str(probe),
+        str(output), '--report', str(probe), '--agent-python', sys.executable,
     ], cwd=ROOT, check=True, timeout=120)
     verification = json.loads(probe.read_text(encoding='utf-8'))
     if not verification.get('ok'):

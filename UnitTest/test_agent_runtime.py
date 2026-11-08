@@ -32,7 +32,7 @@ def interface_config():
     }
 
 
-def client_mock(identifier="generated-id"):
+def client_mock(identifier="18000"):
     client = MagicMock(identifier=identifier, custom_action_list=[], custom_recognition_list=[])
     for name in ("bind", "connect", "disconnect", "set_timeout", "register_sink"):
         getattr(client, name).return_value = True
@@ -66,6 +66,7 @@ class AgentConfigurationTests(unittest.TestCase):
                 with self.subTest(value=value), self.assertRaises(ValueError):
                     normalize_agents(value)
         native.assert_not_called()
+        native.create_tcp.assert_not_called()
         launch.assert_not_called()
 
     def test_duplicate_identifiers_include_equivalent_tcp_ports(self):
@@ -143,14 +144,18 @@ class AgentTestBase(unittest.TestCase):
         self.addCleanup(self.stack.close)
         self.directory = Path(self.stack.enter_context(tempfile.TemporaryDirectory()))
         self.clients, self.processes, self.managers = [], [], []
-        self.native = self.stack.enter_context(patch("app.agentRuntime.AgentClient", side_effect=self.make_client))
+        self.native_class = self.stack.enter_context(patch("app.agentRuntime.AgentClient"))
+        self.native_class.side_effect = AssertionError("Filesystem IPC constructor must not be used")
+        self.native = self.native_class.create_tcp
+        self.native.side_effect = self.make_client
+        self.addCleanup(self.native_class.assert_not_called)
         self.launch = self.stack.enter_context(patch("app.agentRuntime.subprocess.Popen", side_effect=self.make_process))
         self.lease = self.stack.enter_context(patch("app.agentRuntime.EndpointLease"))
         self.stack.enter_context(patch("app.agentRuntime.Library.version", return_value="5.12.3"))
         self.addCleanup(self.close_managers)
 
-    def make_client(self, identifier=None):
-        client = client_mock(identifier or f"generated-{len(self.clients)}")
+    def make_client(self, port=0):
+        client = client_mock(str(port or 18000 + len(self.clients)))
         self.clients.append(client)
         return client
 
@@ -206,7 +211,7 @@ class AgentSessionTests(AgentTestBase):
     def test_multiple_agents_use_independent_clients_and_reverse_cleanup_order(self):
         manager = self.manager([{"child_exec": "python"}, {"child_exec": "python", "identifier": "fixed"}])
         manager.start(object(), object(), object())
-        self.assertEqual(self.native.call_args_list, [call(None), call("fixed")])
+        self.assertEqual(self.native.call_args_list, [call(0), call(0)])
         self.lease.assert_called_once_with("fixed")
         events = []
         for index, client in enumerate(self.clients):
@@ -219,6 +224,40 @@ class AgentSessionTests(AgentTestBase):
             process.wait.assert_called_once_with(timeout=3)
             process.terminate.assert_not_called()
         manager.close()
+
+    def test_requested_ports_and_legacy_names_use_only_tcp_and_pass_actual_port(self):
+        cases = ((None, 0), ("", 0), ("1", 1), ("65535", 65535),
+                 ("005555", 5555), ("fixed-name", 0), ("0", 0),
+                 ("65536", 0), ("-1", 0), ("１２３", 0), ("9" * 5000, 0))
+        for requested, port in cases:
+            with self.subTest(requested=str(requested)[:40]):
+                declaration = {"child_exec": "python"}
+                if requested is not None:
+                    declaration["identifier"] = requested
+                manager = self.manager(declaration)
+                manager.start(object(), object(), object())
+                self.native.assert_called_with(port)
+                self.assertEqual(self.launch.call_args.args[0][-1], self.clients[-1].identifier)
+                self.assertTrue(self.clients[-1].identifier.isascii())
+                self.assertTrue(1 <= int(self.clients[-1].identifier) <= 65535)
+                manager.close()
+
+    def test_invalid_sdk_ports_never_launch_child_and_release_lease(self):
+        for identifier in (None, "", "named", "0", "65536", "-1", "１２３", "9" * 5000, 18000):
+            with self.subTest(identifier=str(identifier)[:40]):
+                client = self.make_client()
+                client.identifier = identifier
+                self.native.side_effect = None
+                self.native.return_value = client
+                manager = self.manager({"child_exec": "python", "identifier": "fixed"})
+                with self.assertRaisesRegex(RuntimeError, "TCP"):
+                    manager.start(object(), object(), object())
+                self.launch.assert_not_called()
+                manager.close()
+                client.disconnect.assert_called_once()
+                self.assertIsNone(manager._bindings)
+                self.assertEqual(manager.agents, [])
+        self.assertEqual(self.lease.return_value.close.call_count, 9)
 
     def test_cancellation_before_start_creates_no_native_client_or_process(self):
         manager = self.manager()
